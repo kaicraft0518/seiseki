@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>成績管理</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<!-- ========== ▼ここにFirebaseの設定を貼る▼ ========== -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
@@ -14,57 +13,49 @@ import { getDatabase, ref, set, onValue, off }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCCx7m_eZKDDAKq0hcuItfj7yjUv3X12mU",
-    authDomain: "test-seiseki.firebaseapp.com",
-    databaseURL: "https://test-seiseki-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "test-seiseki",
-    storageBucket: "test-seiseki.firebasestorage.app",
-    messagingSenderId: "971530781506",
-    appId: "1:971530781506:web:ab8e9d3399b27569e77edb",
-    measurementId: "G-JF7CBEQM79"
-  };
+  apiKey:            "AIzaSyCCx7m_eZKDDAKq0hcuItfj7yjUv3X12mU",
+  authDomain:        "test-seiseki.firebaseapp.com",
+  databaseURL:       "https://test-seiseki-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "test-seiseki",
+  storageBucket:     "test-seiseki.firebasestorage.app",
+  messagingSenderId: "971530781506",
+  appId:             "1:971530781506:web:ab8e9d3399b27569e77edb",
+  measurementId:     "G-JF7CBEQM79"
+};
 
 const app  = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db   = getDatabase(app);
 
-let currentUser = null;
-let dbRef = null;
-let unsubscribe = null;
+let currentUser = null, dbRef = null;
+let autoTimer = null;
+let lineChart = null, barChart = null, diffChart = null, moshiChart = null;
 
-// ログイン
 window._login = async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
-  } catch(e) { console.error(e); }
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch(e) { console.error(e); }
 };
-// ログアウト
 window._logout = async () => {
-  if (unsubscribe) { off(dbRef); unsubscribe = null; }
+  if (dbRef) { off(dbRef); dbRef = null; }
   await signOut(auth);
 };
 
-// 認証状態監視
 onAuthStateChanged(auth, user => {
   currentUser = user;
   if (user) {
     document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display        = 'flex';
-    document.getElementById('user-name').textContent    = user.displayName || user.email;
-    document.getElementById('user-avatar').src          = user.photoURL || '';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name').textContent = user.displayName || user.email;
+    document.getElementById('user-avatar').src = user.photoURL || '';
     startSync(user.uid);
   } else {
     document.getElementById('login-screen').style.display = 'flex';
-    document.getElementById('app').style.display        = 'none';
-    if (unsubscribe) { off(dbRef); unsubscribe = null; }
+    document.getElementById('app').style.display = 'none';
+    if (dbRef) { off(dbRef); dbRef = null; }
   }
 });
 
-// Firebase同期開始
 function startSync(uid) {
   dbRef = ref(db, `users/${uid}/seiseki`);
-  // リアルタイム受信
   onValue(dbRef, snap => {
     const data = snap.val();
     if (data) {
@@ -73,21 +64,18 @@ function startSync(uid) {
       if (data.avgScores) avgScores = data.avgScores;
       if (data.moshiData) {
         moshiData  = data.moshiData;
-        moshiCount = moshiData.length
-          ? Math.max(...moshiData.map(m => m.id))
-          : 0;
+        moshiCount = moshiData.length ? Math.max(...moshiData.map(m => m.id)) : 0;
       }
     }
     initDefaults();
     buildExamPills();
-    buildTable();
+    buildTable();       // 初回ロード時のみ全描画
     buildGraphSelect();
     renderMoshi();
     setSaveStatus('同期済み');
   }, err => { console.error(err); setSaveStatus('同期エラー'); });
 }
 
-// Firebase保存
 window._saveToFirebase = () => {
   if (!currentUser || !dbRef) return;
   set(dbRef, { maxScores, scores, avgScores, moshiData })
@@ -95,7 +83,7 @@ window._saveToFirebase = () => {
     .catch(e => { console.error(e); setSaveStatus('保存失敗'); });
 };
 
-// ========== アプリ本体 ==========
+// ===== データ =====
 const EXAMS = ['第1回','第2回','第3回','第4回'];
 const SUBJECTS = [
   {name:'現代国語',  all:true,  cat:'kokugo'},
@@ -115,10 +103,8 @@ const SUBJECTS = [
 let maxScores = {}, scores = {}, avgScores = {};
 let moshiData = [], moshiCount = 0;
 let currentExam = 0;
-let autoTimer = null;
-let lineChart = null, barChart = null, diffChart = null, moshiChart = null;
 
-function hasExam(sub, i){ return sub.all || sub.exams.includes(i); }
+function hasExam(sub, i){ return sub.all || (sub.exams && sub.exams.includes(i)); }
 
 function initDefaults(){
   SUBJECTS.forEach(s => {
@@ -143,11 +129,10 @@ function scheduleAutosave(){
 
 function calcRating(score, max){
   if(score===''||score==null||isNaN(score)) return null;
-  let r = Math.round(parseFloat(score) * 0.08 + 2);
-  return Math.min(10, Math.max(1, r));
+  return Math.min(10, Math.max(1, Math.round(parseFloat(score) * 0.08 + 2)));
 }
 
-// タブ切替
+// ===== タブ =====
 window.switchTab = name => {
   document.querySelectorAll('.tab').forEach((t,i) =>
     t.classList.toggle('active', ['teiki','graph','moshi'][i]===name));
@@ -157,8 +142,8 @@ window.switchTab = name => {
   if(name==='moshi') drawMoshiChart();
 };
 
-// 定期考査
-window.selectExam = i => { currentExam=i; buildExamPills(); buildTable(); };
+// ===== 定期考査 =====
+window.selectExam = i => { currentExam = i; buildExamPills(); buildTable(); };
 
 function buildExamPills(){
   document.getElementById('exam-pills').innerHTML =
@@ -167,73 +152,129 @@ function buildExamPills(){
     ).join('');
 }
 
+// 行IDヘルパー
+function rowId(subName){ return 'row-' + subName.replace(/[^a-zA-Z0-9]/g,'_'); }
+
+// テーブル全描画（タブ切替・考査切替時のみ）
 function buildTable(){
-  const i = currentExam;
+  const ei = currentExam;
   document.getElementById('thead').innerHTML = `<tr>
     <th style="min-width:130px;text-align:left">科目</th>
     <th>満点</th><th>平均点</th><th>自分</th>
     <th>差</th><th>得点率</th><th>評定</th><th>学年順位</th>
   </tr>`;
 
-  let b='', totalScore=0, totalMax=0, totalAvg=0;
-  let hasSc=false, hasAv=false;
-
+  let b = '';
   SUBJECTS.forEach(sub => {
-    if(!hasExam(sub,i)){
-      b+=`<tr><td class="sub ${sub.cat}" style="color:var(--text3)">${sub.name}</td>
-          <td class="na" colspan="7">この考査は実施なし</td></tr>`; return;
+    const rid = rowId(sub.name);
+    if(!hasExam(sub, ei)){
+      b += `<tr id="${rid}"><td class="sub ${sub.cat}" style="color:var(--text3)">${sub.name}</td>
+            <td class="na" colspan="7">この考査は実施なし</td></tr>`;
+      return;
     }
-    const mx  = maxScores[sub.name][i]||100;
-    const sc  = scores[sub.name][i];
-    const av  = avgScores[sub.name][i];
-    const rnk = scores[sub.name]['rank_'+i]||'';
-    const tot = scores[sub.name]['rtotal_'+i]||'';
-    const r   = calcRating(sc, mx);
-    const rc  = r?'r'+r:'';
-    let diff='', diffClass='';
-    if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){
-      const d = parseFloat(sc)-parseFloat(av);
-      diff = (d>=0?'+':'')+d.toFixed(1);
-      diffClass = d>=0?'diff-pos':'diff-neg';
-    }
-    totalMax += mx;
-    if(sc!==''&&sc!=null&&!isNaN(sc)){ totalScore+=parseFloat(sc); hasSc=true; }
-    if(av!==''&&av!=null&&!isNaN(av)){ totalAvg  +=parseFloat(av); hasAv=true; }
-    b+=`<tr>
+    const mx  = maxScores[sub.name][ei] || 100;
+    const sc  = scores[sub.name][ei];
+    const av  = avgScores[sub.name][ei];
+    const rnk = scores[sub.name]['rank_'+ei] || '';
+    const tot = scores[sub.name]['rtotal_'+ei] || '';
+    const {diff, diffClass, rate, r, rc} = calcCells(sc, av, mx);
+    b += `<tr id="${rid}">
       <td class="sub ${sub.cat}">${sub.name}</td>
-      <td><input type="number" min="1" max="999" value="${mx}" oninput="onMax('${sub.name}',${i},this.value)"></td>
-      <td><input type="number" min="0" max="${mx}" value="${av}" placeholder="—" oninput="onAvg('${sub.name}',${i},this.value)"></td>
-      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc}" placeholder="—" oninput="onScore('${sub.name}',${i},this.value)"></td>
-      <td class="${diffClass}">${diff||'—'}</td>
-      <td>${sc!==''&&sc!=null&&!isNaN(sc)?Math.round(parseFloat(sc)/mx*1000)/10+'%':'—'}</td>
-      <td class="${rc}">${r||'—'}</td>
-      <td><input type="number" min="1" value="${rnk}" placeholder="—" style="width:36px" oninput="onRank('${sub.name}',${i},'rank',this.value)">
-          <span style="color:var(--text3);font-size:11px">/</span>
-          <input type="number" min="1" value="${tot}" placeholder="全体" style="width:42px" oninput="onRank('${sub.name}',${i},'rtotal',this.value)"></td>
+      <td><input type="number" min="1" max="999" value="${mx}"
+            onchange="onMax('${sub.name}',${ei},this.value)"></td>
+      <td><input type="number" min="0" max="${mx}" value="${av!==''?av:''}" placeholder="—"
+            oninput="onAvg('${sub.name}',${ei},this.value)"></td>
+      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc!==''?sc:''}" placeholder="—"
+            oninput="onScore('${sub.name}',${ei},this.value)"></td>
+      <td class="cell-diff ${diffClass}" id="${rid}-diff">${diff}</td>
+      <td class="cell-rate" id="${rid}-rate">${rate}</td>
+      <td class="cell-r ${rc}" id="${rid}-r">${r!=null?r:'—'}</td>
+      <td><input type="number" min="1" value="${rnk}" placeholder="—" style="width:36px"
+            onchange="onRank('${sub.name}',${ei},'rank',this.value)"><span style="color:var(--text3);font-size:11px"> / </span>
+          <input type="number" min="1" value="${tot}" placeholder="全体" style="width:42px"
+            onchange="onRank('${sub.name}',${ei},'rtotal',this.value)"></td>
     </tr>`;
   });
-  const td=hasSc&&hasAv?totalScore-totalAvg:null;
-  b+=`<tr style="background:var(--surface2);font-weight:700">
+  // 合計行
+  b += `<tr id="row-total" style="background:var(--surface2);font-weight:700">
     <td class="sub" style="font-weight:700">合計</td>
-    <td>${totalMax}</td>
-    <td>${hasAv?totalAvg:'—'}</td>
-    <td>${hasSc?totalScore:'—'}</td>
-    <td class="${td==null?'':td>=0?'diff-pos':'diff-neg'}">${td!=null?(td>=0?'+':'')+td:'—'}</td>
-    <td>${hasSc?Math.round(totalScore/totalMax*1000)/10+'%':'—'}</td>
-    <td colspan="2">—</td>
+    <td id="total-max">—</td><td id="total-avg">—</td><td id="total-sc">—</td>
+    <td id="total-diff">—</td><td id="total-rate">—</td><td colspan="2">—</td>
   </tr>`;
   document.getElementById('tbody').innerHTML = b;
+  updateTotals();
   buildSummary();
 }
 
+// セル計算（差・得点率・評定）
+function calcCells(sc, av, mx){
+  let diff='—', diffClass='', rate='—', r=null, rc='';
+  if(sc!==''&&sc!=null&&!isNaN(sc)){
+    rate = Math.round(parseFloat(sc)/mx*1000)/10 + '%';
+    r = calcRating(sc, mx);
+    rc = r ? 'r'+r : '';
+  }
+  if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){
+    const d = parseFloat(sc)-parseFloat(av);
+    diff = (d>=0?'+':'')+d.toFixed(1);
+    diffClass = d>=0?'diff-pos':'diff-neg';
+  }
+  return {diff, diffClass, rate, r, rc};
+}
+
+// 計算セルだけ更新（再描画なし）
+function updateRow(subName){
+  const ei = currentExam;
+  const sub = SUBJECTS.find(s=>s.name===subName);
+  if(!sub||!hasExam(sub,ei)) return;
+  const rid = rowId(subName);
+  const mx  = maxScores[subName][ei] || 100;
+  const sc  = scores[subName][ei];
+  const av  = avgScores[subName][ei];
+  const {diff, diffClass, rate, r, rc} = calcCells(sc, av, mx);
+
+  const dEl = document.getElementById(rid+'-diff');
+  const rateEl = document.getElementById(rid+'-rate');
+  const rEl = document.getElementById(rid+'-r');
+  if(dEl){ dEl.textContent=diff; dEl.className='cell-diff '+diffClass; }
+  if(rateEl) rateEl.textContent = rate;
+  if(rEl){ rEl.textContent=r!=null?r:'—'; rEl.className='cell-r '+(r?'r'+r:''); }
+
+  updateTotals();
+  buildSummary();
+}
+
+function updateTotals(){
+  const ei = currentExam;
+  let totalMax=0, totalSc=0, totalAv=0, hasSc=false, hasAv=false;
+  SUBJECTS.forEach(sub=>{
+    if(!hasExam(sub,ei)) return;
+    const mx=maxScores[sub.name][ei]||100;
+    const sc=scores[sub.name][ei];
+    const av=avgScores[sub.name][ei];
+    totalMax+=mx;
+    if(sc!==''&&sc!=null&&!isNaN(sc)){ totalSc+=parseFloat(sc); hasSc=true; }
+    if(av!==''&&av!=null&&!isNaN(av)){ totalAv+=parseFloat(av); hasAv=true; }
+  });
+  const td = hasSc&&hasAv ? totalSc-totalAv : null;
+  const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  set('total-max', totalMax);
+  set('total-avg', hasAv?totalAv:'—');
+  set('total-sc',  hasSc?totalSc:'—');
+  set('total-diff', td!=null?(td>=0?'+':'')+td:'—');
+  set('total-rate', hasSc?Math.round(totalSc/totalMax*1000)/10+'%':'—');
+  const tdEl=document.getElementById('total-diff');
+  if(tdEl) tdEl.className = td==null?'':td>=0?'diff-pos':'diff-neg';
+}
+
 function buildSummary(){
-  const i=currentExam;
+  const ei=currentExam;
   let total=0,cnt=0,maxR=0,diffTotal=0,diffCnt=0;
   SUBJECTS.forEach(sub=>{
-    if(!hasExam(sub,i)) return;
-    const r=calcRating(scores[sub.name][i],maxScores[sub.name][i]);
+    if(!hasExam(sub,ei)) return;
+    const r=calcRating(scores[sub.name][ei],maxScores[sub.name][ei]);
     if(r!=null){total+=r;cnt++;if(r>maxR)maxR=r;}
-    const sc=scores[sub.name][i],av=avgScores[sub.name][i];
+    const sc=scores[sub.name][ei],av=avgScores[sub.name][ei];
     if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){diffTotal+=parseFloat(sc)-parseFloat(av);diffCnt++;}
   });
   const avg=cnt?(total/cnt).toFixed(1):'—';
@@ -245,27 +286,42 @@ function buildSummary(){
       <div class="metric-value" style="color:${dc};font-size:18px">${diffCnt&&diffTotal>=0?'+':''}${diffCnt?(diffTotal/diffCnt).toFixed(1):'—'}</div></div>`;
 }
 
-window.onMax   = (n,i,v)=>{ const x=parseFloat(v); if(!isNaN(x)&&x>=1){maxScores[n][i]=Math.round(x);buildTable();scheduleAutosave();} };
-window.onAvg   = (n,i,v)=>{ avgScores[n][i]=v===''?'':parseFloat(v); buildTable(); scheduleAutosave();
-  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs(); };
-window.onScore = (n,i,v)=>{ scores[n][i]=v===''?'':parseFloat(v); buildTable(); scheduleAutosave();
-  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs(); };
-window.onRank  = (n,i,k,v)=>{ scores[n][k+'_'+i]=v===''?'':parseInt(v); scheduleAutosave(); };
+// 入力ハンドラ（buildTable を呼ばず updateRow のみ）
+window.onMax = (n,i,v) => {
+  const x=parseFloat(v); if(isNaN(x)||x<1) return;
+  maxScores[n][i]=Math.round(x);
+  buildTable(); // 満点変更は input[max] も変わるので全描画
+  scheduleAutosave();
+};
+window.onAvg = (n,i,v) => {
+  avgScores[n][i]=v===''?'':parseFloat(v);
+  updateRow(n); scheduleAutosave();
+  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs();
+};
+window.onScore = (n,i,v) => {
+  scores[n][i]=v===''?'':parseFloat(v);
+  updateRow(n); scheduleAutosave();
+  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs();
+};
+window.onRank = (n,i,k,v) => {
+  scores[n][k+'_'+i]=v===''?'':parseInt(v);
+  scheduleAutosave();
+};
 
-// グラフ
+// ===== グラフ =====
 function buildGraphSelect(){
   document.getElementById('graph-sel').innerHTML =
     SUBJECTS.map(s=>`<option value="${s.name}">${s.name}</option>`).join('');
 }
 
 window.drawGraphs = () => {
-  const name = document.getElementById('graph-sel').value;
-  const sub  = SUBJECTS.find(s=>s.name===name);
+  const name=document.getElementById('graph-sel').value;
+  const sub=SUBJECTS.find(s=>s.name===name);
   const labels=[],ratings=[],rates=[],diffs=[];
   EXAMS.forEach((e,i)=>{
     if(!hasExam(sub,i)) return;
     labels.push(e);
-    const sc=scores[sub.name][i], mx=maxScores[sub.name][i], av=avgScores[sub.name][i];
+    const sc=scores[sub.name][i],mx=maxScores[sub.name][i]||100,av=avgScores[sub.name][i];
     ratings.push(calcRating(sc,mx));
     rates.push(sc!==''&&sc!=null?Math.round(parseFloat(sc)/mx*100):null);
     diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
@@ -280,14 +336,13 @@ window.drawGraphs = () => {
   diffChart=new Chart(document.getElementById('diffChart'),{type:'bar',data:{labels,datasets:[{data:diffs,backgroundColor:dc,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gc},ticks:{callback:v=>(v>=0?'+':'')+v}},x:{grid:{display:false}}}}});
 };
 
-// 模試
+// ===== 模試 =====
 window.addMoshi = () => {
   moshiCount++;
   moshiData.push({id:moshiCount,name:`模試${moshiCount}`,
     kokugo:{score:'',rank:'',total:''},
     sugaku:{score:'',rank:'',total:''},
-    eigo:  {score:'',rank:'',total:''}
-  });
+    eigo:  {score:'',rank:'',total:''}});
   renderMoshi(); scheduleAutosave();
 };
 window.deleteMoshi = id => {
@@ -321,12 +376,15 @@ function renderMoshi(){
           <div class="moshi-subj">
             <div class="moshi-subj-label">${label}</div>
             <div class="field-label">点数</div>
-            <input type="number" class="field-input" value="${m[sub].score}" placeholder="—" oninput="updateMoshi(${m.id},'${sub}','score',this.value)">
+            <input type="number" class="field-input" value="${m[sub].score}" placeholder="—"
+              oninput="updateMoshi(${m.id},'${sub}','score',this.value)">
             <div class="field-label">順位</div>
             <div class="rank-row">
-              <input type="number" class="field-input" value="${m[sub].rank}" placeholder="—" style="width:48%" oninput="updateMoshi(${m.id},'${sub}','rank',this.value)">
+              <input type="number" class="field-input" value="${m[sub].rank}" placeholder="—"
+                style="width:48%" oninput="updateMoshi(${m.id},'${sub}','rank',this.value)">
               <span class="rank-sep">/</span>
-              <input type="number" class="field-input" value="${m[sub].total}" placeholder="全体" style="width:48%" oninput="updateMoshi(${m.id},'${sub}','total',this.value)">
+              <input type="number" class="field-input" value="${m[sub].total}" placeholder="全体"
+                style="width:48%" oninput="updateMoshi(${m.id},'${sub}','total',this.value)">
             </div>
           </div>`).join('')}
       </div>
@@ -346,11 +404,11 @@ function drawMoshiChart(){
       {label:'数学',data:mk('sugaku'),borderColor:'#4a3fd4',backgroundColor:'transparent',pointBackgroundColor:'#4a3fd4',borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5,borderDash:[5,4]},
       {label:'英語',data:mk('eigo'),  borderColor:'#1D9E75',backgroundColor:'transparent',pointBackgroundColor:'#1D9E75',borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5,borderDash:[2,3]},
     ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}}
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}}
   });
 }
 </script>
-<!-- ========== ▲Firebase設定ここまで▲ ========== -->
 
 <style>
 :root {
@@ -368,43 +426,31 @@ function drawMoshiChart(){
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px}
 
-/* ログイン画面 */
-#login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:100vh;gap:20px;background:var(--bg)}
-.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;
-  padding:40px 32px;text-align:center;max-width:320px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,0.08)}
+#login-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:var(--bg)}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 32px;text-align:center;max-width:320px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,0.08)}
 .login-card h1{font-size:20px;font-weight:700;margin-bottom:8px}
 .login-card p{font-size:13px;color:var(--text2);margin-bottom:28px;line-height:1.6}
-.btn-google{display:flex;align-items:center;gap:12px;padding:12px 20px;
-  border:1.5px solid var(--border2);border-radius:8px;background:var(--surface);
-  color:var(--text);font-size:14px;font-weight:600;cursor:pointer;width:100%;justify-content:center}
+.btn-google{display:flex;align-items:center;gap:12px;padding:12px 20px;border:1.5px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;width:100%;justify-content:center}
 .btn-google:active{opacity:0.7}
-.btn-google svg{flex-shrink:0}
 
-/* アプリ */
 .app{display:none;flex-direction:column;height:100vh}
-.topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;
-  background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
 .topbar h1{font-size:16px;font-weight:700;flex:1}
 .user-info{display:flex;align-items:center;gap:7px}
 #user-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1px solid var(--border2)}
 #user-name{font-size:12px;color:var(--text2);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .save-status{font-size:11px;color:var(--text3)}
-.btn{padding:5px 12px;border:1px solid var(--border2);border-radius:var(--radius-sm);
-  background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap}
+.btn{padding:5px 12px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap}
 .btn:active{opacity:0.7}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn-danger{color:#c0392b;border-color:#e9b0af}
 
-.tabs{display:flex;padding:0 14px;background:var(--surface);
-  border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
-.tab{padding:10px 18px;font-size:13px;color:var(--text2);
-  border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.tabs{display:flex;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.tab{padding:10px 18px;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 
 .content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
-.section{display:none}
-.section.active{display:block}
+.section{display:none}.section.active{display:block}
 
 .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
 .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
@@ -412,8 +458,7 @@ html,body{height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif;backg
 .metric-value{font-size:22px;font-weight:700;color:var(--accent)}
 
 .exam-pills{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
-.exam-pill{padding:7px 18px;font-size:13px;font-weight:500;border:1.5px solid var(--border2);
-  border-radius:99px;background:var(--surface);color:var(--text2);cursor:pointer;white-space:nowrap}
+.exam-pill{padding:7px 18px;font-size:13px;font-weight:500;border:1.5px solid var(--border2);border-radius:99px;background:var(--surface);color:var(--text2);cursor:pointer;white-space:nowrap}
 .exam-pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
@@ -431,10 +476,8 @@ td.sub.shakai{background:#f3ead8;color:#6b4210}
 td.sub.other{background:var(--surface2);color:var(--text)}
 td.na{background:#f5f5f3;color:var(--text3)}
 td.score-cell{background:#fde8e8}
-td input[type=number]{width:56px;border:none;background:transparent;text-align:center;
-  font-size:12px;color:var(--text);outline:none;font-family:inherit;-moz-appearance:textfield}
-td input[type=number]::-webkit-inner-spin-button,
-td input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+td input[type=number]{width:56px;border:none;background:transparent;text-align:center;font-size:12px;color:var(--text);outline:none;font-family:inherit;-moz-appearance:textfield}
+td input[type=number]::-webkit-inner-spin-button,td input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
 td input[type=number]:focus{background:var(--accent-light);border-radius:4px}
 td.score-cell input{color:#8b1a1a;font-weight:600}
 td.r1,td.r2,td.r3{background:var(--r1);color:var(--r1t);font-weight:600}
@@ -446,27 +489,21 @@ td.diff-pos{color:#0d5e3f;font-size:12px;font-weight:600}
 td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 .note{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6}
 
-.graph-ctrl{display:flex;align-items:center;gap:12px;background:var(--surface);
-  border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;flex-wrap:wrap}
+.graph-ctrl{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;flex-wrap:wrap}
 .graph-ctrl label{font-size:12px;color:var(--text2)}
-.graph-ctrl select{font-size:13px;padding:5px 8px;border:1px solid var(--border2);
-  border-radius:var(--radius-sm);background:var(--surface);color:var(--text)}
-.chart-block{background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--radius);padding:14px;margin-bottom:14px}
+.graph-ctrl select{font-size:13px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text)}
+.chart-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px}
 .chart-block-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px}
 .chart-wrap{position:relative;width:100%;height:220px}
 
 .moshi-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .moshi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
 .moshi-name-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
-.moshi-name-input{font-size:14px;font-weight:600;border:none;background:transparent;
-  color:var(--text);border-bottom:1px solid var(--border2);width:120px;font-family:inherit;outline:none}
+.moshi-name-input{font-size:14px;font-weight:600;border:none;background:transparent;color:var(--text);border-bottom:1px solid var(--border2);width:120px;font-family:inherit;outline:none}
 .moshi-subjects{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-.moshi-subj-label{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;
-  padding-bottom:4px;border-bottom:2px solid var(--border)}
+.moshi-subj-label{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid var(--border)}
 .field-label{font-size:10px;color:var(--text3);margin-bottom:2px}
-.field-input{width:100%;border:1px solid var(--border);border-radius:5px;padding:5px 7px;
-  font-size:12px;background:var(--bg);color:var(--text);font-family:inherit;margin-bottom:6px;-moz-appearance:textfield}
+.field-input{width:100%;border:1px solid var(--border);border-radius:5px;padding:5px 7px;font-size:12px;background:var(--bg);color:var(--text);font-family:inherit;margin-bottom:6px;-moz-appearance:textfield}
 .field-input::-webkit-inner-spin-button{-webkit-appearance:none}
 .field-input:focus{outline:none;border-color:var(--accent);background:var(--accent-light)}
 .rank-row{display:flex;align-items:center;gap:4px}
@@ -477,7 +514,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 </head>
 <body>
 
-<!-- ログイン画面 -->
 <div id="login-screen">
   <div class="login-card">
     <h1>📊 成績管理</h1>
@@ -489,7 +525,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
   </div>
 </div>
 
-<!-- メインアプリ -->
 <div class="app" id="app">
   <div class="topbar">
     <h1>📊 成績管理</h1>
@@ -508,7 +543,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
   </div>
 
   <div class="content">
-
     <div id="sec-teiki" class="section active">
       <div class="summary" id="summary"></div>
       <div class="exam-pills" id="exam-pills"></div>
@@ -553,7 +587,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
         <div class="chart-wrap"><canvas id="moshiChart"></canvas></div>
       </div>
     </div>
-
   </div>
 </div>
 
