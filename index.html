@@ -212,12 +212,12 @@ function buildTable(){
 function calcCells(sc, av, mx){
   let diff='—', diffClass='', rate='—', r=null, rc='';
   if(sc!==''&&sc!=null&&!isNaN(sc)){
-    rate = Math.round(parseFloat(sc)/mx*1000)/10 + '%';
+    rate = (Math.round(parseFloat(sc)/mx*1000)/10).toFixed(1) + '%';
     r = calcRating(sc, mx);
     rc = r ? 'r'+r : '';
   }
   if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){
-    const d = parseFloat(sc)-parseFloat(av);
+    const d = Math.round((parseFloat(sc)-parseFloat(av))*10)/10;
     diff = (d>=0?'+':'')+d.toFixed(1);
     diffClass = d>=0?'diff-pos':'diff-neg';
   }
