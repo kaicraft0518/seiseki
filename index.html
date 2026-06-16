@@ -93,7 +93,7 @@ const SUBJECTS = [
   {name:'英コミュⅠ',all:true,  cat:'eigo'},
   {name:'論表Ⅰ',    all:true,  cat:'eigo'},
   {name:'英語L',     all:true,  cat:'eigo'},
-  {name:'物理基礎',  all:true,  cat:'rika'},
+  {name:'科学と人間生活', all:true, cat:'rika'},
   {name:'化学基礎',  all:true,  cat:'rika'},
   {name:'地理総合',  all:true,  cat:'shakai'},
   {name:'歴史総合',  all:true,  cat:'shakai'},
@@ -128,8 +128,10 @@ function scheduleAutosave(){
 }
 
 function calcRating(score, max){
-  if(score===''||score==null||isNaN(score)) return null;
-  return Math.min(10, Math.max(1, Math.round(parseFloat(score) * 0.08 + 2)));
+  if(score===''||score==null||isNaN(score)||!max) return null;
+  // 得点率(0〜1)を10段階に変換: 0%→1, 100%→10
+  const rate = parseFloat(score) / max;
+  return Math.min(10, Math.max(1, Math.round(rate * 9 + 1)));
 }
 
 // ===== タブ =====
