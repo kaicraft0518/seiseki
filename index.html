@@ -133,7 +133,7 @@ function startSync(uid){
 
 window._saveToFirebase = () => {
   if(!currentUser||!dbRef) return;
-  set(dbRef, { grades: gradeData })
+  set(ref(db, `users/${currentUser.uid}/seiseki`), { grades: gradeData })
     .then(()=> setSaveStatus('保存済み '+new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})))
     .catch(e => { console.error(e); setSaveStatus('保存失敗'); });
 };
