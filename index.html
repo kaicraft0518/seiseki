@@ -28,313 +28,281 @@ const auth = getAuth(app);
 const db   = getDatabase(app);
 
 let currentUser = null, dbRef = null, autoTimer = null;
-let teikiLineChart=null, teikiAllChart=null, teikiSubChart=null;
-let moshiScoreChart=null, moshiHensaChart=null;
+let lineChart = null, barChart = null, diffChart = null, moshiChart = null;
 
-// ===== 定数 =====
-const GRADES = ['1年','2年','3年'];
-const EXAMS  = ['第1回','第2回','第3回','第4回'];
-const SUBJECTS = [
-  {name:'現代国語',      all:true,  cat:'kokugo'},
-  {name:'言語文化',      all:true,  cat:'kokugo'},
-  {name:'数学I',         all:true,  cat:'sugaku'},
-  {name:'数学A',         all:true,  cat:'sugaku'},
-  {name:'英コミュⅠ',    all:true,  cat:'eigo'},
-  {name:'論表Ⅰ',        all:true,  cat:'eigo'},
-  {name:'英語L',         all:true,  cat:'eigo'},
-  {name:'科学と人間生活',all:true,  cat:'rika'},
-  {name:'化学基礎',      all:true,  cat:'rika'},
-  {name:'地理総合',      all:true,  cat:'shakai'},
-  {name:'歴史総合',      all:true,  cat:'shakai'},
-  {name:'情報',          all:false, exams:[1,3], cat:'other'},
-];
-const SUB_COLORS = [
-  '#D85A30','#c0392b','#4a3fd4','#2980b9',
-  '#D85A9E','#8e44ad','#1D9E75','#27ae60',
-  '#e67e22','#f39c12','#7f8c8d','#2c3e50'
-];
-
-// ===== 状態 =====
-let currentGrade = 0; // 0=1年,1=2年,2=3年
-let currentExam  = 0;
-let currentGraphMode = 'total'; // 'total' | 'sub'
-let currentSubject = SUBJECTS[0].name;
-
-// 学年ごとにデータを持つ
-// data[grade] = { maxScores, scores, avgScores, goalScores, totalRanks, moshiData, moshiCount }
-let gradeData = [{},{},{}];
-
-function gd(){ return gradeData[currentGrade]; }
-
-function initGradeDefaults(g){
-  const d = gradeData[g];
-  if(!d.maxScores)  d.maxScores  = {};
-  if(!d.scores)     d.scores     = {};
-  if(!d.avgScores)  d.avgScores  = {};
-  if(!d.goalScores) d.goalScores = {};
-  if(!d.totalRanks) d.totalRanks = {};
-  if(!d.moshiData)  d.moshiData  = [];
-  if(d.moshiCount==null) d.moshiCount = 0;
-  SUBJECTS.forEach(s => {
-    if(!d.maxScores[s.name])  d.maxScores[s.name]  = {};
-    if(!d.scores[s.name])     d.scores[s.name]     = {};
-    if(!d.avgScores[s.name])  d.avgScores[s.name]  = {};
-    if(!d.goalScores[s.name]) d.goalScores[s.name] = {};
-    EXAMS.forEach((_,i) => {
-      if(d.maxScores[s.name][i]  == null) d.maxScores[s.name][i]  = 100;
-      if(d.scores[s.name][i]     == null) d.scores[s.name][i]     = '';
-      if(d.avgScores[s.name][i]  == null) d.avgScores[s.name][i]  = '';
-      if(d.goalScores[s.name][i] == null) d.goalScores[s.name][i] = '';
-    });
-  });
-  EXAMS.forEach((_,i) => {
-    if(!d.totalRanks[i]) d.totalRanks[i] = {rating:'',rank:'',rtotal:''};
-  });
-}
-
-// ===== Firebase =====
 window._login = async () => {
-  try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch(e){ console.error(e); }
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch(e) { console.error(e); }
 };
 window._logout = async () => {
-  if(dbRef){ off(dbRef); dbRef=null; }
+  if (dbRef) { off(dbRef); dbRef = null; }
   await signOut(auth);
 };
 
 onAuthStateChanged(auth, user => {
   currentUser = user;
-  if(user){
-    document.getElementById('login-screen').style.display='none';
-    document.getElementById('app').style.display='flex';
-    document.getElementById('user-name').textContent = user.displayName||user.email;
-    document.getElementById('user-avatar').src = user.photoURL||'';
+  if (user) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+    document.getElementById('user-name').textContent = user.displayName || user.email;
+    document.getElementById('user-avatar').src = user.photoURL || '';
     startSync(user.uid);
   } else {
-    document.getElementById('login-screen').style.display='flex';
-    document.getElementById('app').style.display='none';
-    if(dbRef){ off(dbRef); dbRef=null; }
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+    if (dbRef) { off(dbRef); dbRef = null; }
   }
 });
 
-function startSync(uid){
+function startSync(uid) {
   dbRef = ref(db, `users/${uid}/seiseki`);
   onValue(dbRef, snap => {
     const data = snap.val();
-    if(data && data.grades){
-      GRADES.forEach((_,g) => {
-        if(data.grades[g]) gradeData[g] = data.grades[g];
-      });
+    if (data) {
+      if (data.maxScores)   maxScores   = data.maxScores;
+      if (data.scores)      scores      = data.scores;
+      if (data.avgScores)   avgScores   = data.avgScores;
+      if (data.totalRanks)  totalRanks  = data.totalRanks;
+      if (data.moshiData) {
+        moshiData  = data.moshiData;
+        moshiCount = moshiData.length ? Math.max(...moshiData.map(m => m.id)) : 0;
+      }
     }
-    GRADES.forEach((_,g) => initGradeDefaults(g));
-    buildUI();
+    initDefaults();
+    buildExamPills();
+    buildTable();
+    buildGraphSelect();
+    renderMoshi();
     setSaveStatus('同期済み');
   }, err => { console.error(err); setSaveStatus('同期エラー'); });
 }
 
 window._saveToFirebase = () => {
-  if(!currentUser||!dbRef) return;
-  set(dbRef, { grades: gradeData })
-    .then(()=> setSaveStatus('保存済み '+new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})))
+  if (!currentUser || !dbRef) return;
+  set(dbRef, { maxScores, scores, avgScores, totalRanks, moshiData })
+    .then(() => setSaveStatus('保存済み ' + new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})))
     .catch(e => { console.error(e); setSaveStatus('保存失敗'); });
 };
 
-function setSaveStatus(msg){ document.getElementById('save-status').textContent=msg; }
+// ===== データ =====
+const EXAMS = ['第1回','第2回','第3回','第4回'];
+const SUBJECTS = [
+  {name:'現代国語',     all:true,  cat:'kokugo'},
+  {name:'言語文化',     all:true,  cat:'kokugo'},
+  {name:'数学I',        all:true,  cat:'sugaku'},
+  {name:'数学A',        all:true,  cat:'sugaku'},
+  {name:'英コミュⅠ',   all:true,  cat:'eigo'},
+  {name:'論表Ⅰ',       all:true,  cat:'eigo'},
+  {name:'英語L',        all:true,  cat:'eigo'},
+  {name:'科学と人間生活',all:true, cat:'rika'},
+  {name:'化学基礎',     all:true,  cat:'rika'},
+  {name:'地理総合',     all:true,  cat:'shakai'},
+  {name:'歴史総合',     all:true,  cat:'shakai'},
+  {name:'情報',         all:false, exams:[1,3], cat:'other'},
+];
+
+// グラフ用カラー
+const COLORS = [
+  '#D85A30','#c0392b','#4a3fd4','#2980b9',
+  '#D85A9E','#8e44ad','#1D9E75','#27ae60',
+  '#e67e22','#f39c12','#7f8c8d','#2c3e50'
+];
+
+let maxScores = {}, scores = {}, avgScores = {}, totalRanks = {};
+let moshiData = [], moshiCount = 0;
+let currentExam = 0;
+
+function hasExam(sub, i){ return sub.all || (sub.exams && sub.exams.includes(i)); }
+
+function initDefaults(){
+  SUBJECTS.forEach(s => {
+    if(!maxScores[s.name]) maxScores[s.name] = {};
+    if(!scores[s.name])    scores[s.name]    = {};
+    if(!avgScores[s.name]) avgScores[s.name] = {};
+    EXAMS.forEach((_,i) => {
+      if(maxScores[s.name][i] == null) maxScores[s.name][i] = 100;
+      if(scores[s.name][i]    == null) scores[s.name][i]    = '';
+      if(avgScores[s.name][i] == null) avgScores[s.name][i] = '';
+    });
+  });
+  if(!totalRanks) totalRanks = {};
+  EXAMS.forEach((_,i) => {
+    if(totalRanks[i] == null) totalRanks[i] = {rating:'', rank:'', rtotal:''};
+  });
+}
+
+function setSaveStatus(msg){ document.getElementById('save-status').textContent = msg; }
 function scheduleAutosave(){
-  clearTimeout(autoTimer); setSaveStatus('未保存...');
-  autoTimer = setTimeout(()=>window._saveToFirebase(), 1500);
+  clearTimeout(autoTimer);
+  setSaveStatus('未保存...');
+  autoTimer = setTimeout(() => window._saveToFirebase(), 1500);
 }
 
-// ===== ユーティリティ =====
-function fmtN(v){ return (Math.round(v*10)/10).toFixed(1); }
-function hasExam(sub,i){ return sub.all||(sub.exams&&sub.exams.includes(i)); }
-function rowId(n){ return 'row-'+n.replace(/[^a-zA-Z0-9]/g,'_'); }
-function calcRating(score,max){
+function fmtN(v){ return (Math.round(v * 10) / 10).toFixed(1); }
+
+function calcRating(score, max){
   if(score===''||score==null||isNaN(score)||!max) return null;
-  return Math.min(10,Math.max(1,Math.round(parseFloat(score)/max*9+1)));
+  const rate = parseFloat(score) / max;
+  return Math.min(10, Math.max(1, Math.round(rate * 9 + 1)));
 }
-
-// ===== UI全体 =====
-function buildUI(){
-  buildGradeTabs();
-  buildExamPills();
-  buildTable();
-  buildTeikiGraphs();
-  renderMoshi();
-  buildMoshiGraphs();
-}
-
-// ===== 学年タブ =====
-function buildGradeTabs(){
-  document.getElementById('grade-tabs').innerHTML =
-    GRADES.map((g,i)=>
-      `<div class="grade-tab${i===currentGrade?' active':''}" onclick="selectGrade(${i})">${g}</div>`
-    ).join('');
-}
-window.selectGrade = i => {
-  currentGrade=i; currentExam=0;
-  buildGradeTabs(); buildExamPills(); buildTable();
-  buildTeikiGraphs(); renderMoshi(); buildMoshiGraphs();
-};
 
 // ===== タブ =====
 window.switchTab = name => {
-  document.querySelectorAll('.tab').forEach((t,i)=>
-    t.classList.toggle('active',['teiki','moshi'][i]===name));
-  ['teiki','moshi'].forEach(n=>
-    document.getElementById('sec-'+n).classList.toggle('active',n===name));
+  document.querySelectorAll('.tab').forEach((t,i) =>
+    t.classList.toggle('active', ['teiki','graph','moshi'][i]===name));
+  ['teiki','graph','moshi'].forEach(n =>
+    document.getElementById('sec-'+n).classList.toggle('active', n===name));
+  if(name==='graph') drawGraphs();
+  if(name==='moshi') drawMoshiChart();
 };
 
-// ===== 考査ピル =====
-window.selectExam = i => { currentExam=i; buildExamPills(); buildTable(); };
+// ===== 定期考査 =====
+window.selectExam = i => { currentExam = i; buildExamPills(); buildTable(); };
+
 function buildExamPills(){
   document.getElementById('exam-pills').innerHTML =
-    EXAMS.map((e,i)=>
+    EXAMS.map((e,i) =>
       `<div class="exam-pill${i===currentExam?' active':''}" onclick="selectExam(${i})">${e}</div>`
     ).join('');
 }
 
-// ===== テーブル =====
+function rowId(n){ return 'row-'+n.replace(/[^a-zA-Z0-9]/g,'_'); }
+
 function buildTable(){
-  const d=gd(), ei=currentExam;
-  document.getElementById('thead').innerHTML=`<tr>
-    <th style="min-width:120px;text-align:left">科目</th>
-    <th>満点</th><th>目標</th><th>平均点</th><th>自分</th>
-    <th>差</th><th>目標差</th><th>得点率</th><th>評定</th><th>学年順位</th>
+  const ei = currentExam;
+  document.getElementById('thead').innerHTML = `<tr>
+    <th style="min-width:130px;text-align:left">科目</th>
+    <th>満点</th><th>平均点</th><th>自分</th>
+    <th>差</th><th>得点率</th><th>評定</th><th>学年順位</th>
   </tr>`;
-  let b='';
-  SUBJECTS.forEach(sub=>{
-    const rid=rowId(sub.name);
-    if(!hasExam(sub,ei)){
-      b+=`<tr id="${rid}"><td class="sub ${sub.cat}" style="color:var(--text3)">${sub.name}</td>
-          <td class="na" colspan="9">この考査は実施なし</td></tr>`;
+
+  let b = '';
+  SUBJECTS.forEach(sub => {
+    const rid = rowId(sub.name);
+    if(!hasExam(sub, ei)){
+      b += `<tr id="${rid}"><td class="sub ${sub.cat}" style="color:var(--text3)">${sub.name}</td>
+            <td class="na" colspan="7">この考査は実施なし</td></tr>`;
       return;
     }
-    const mx  = d.maxScores[sub.name][ei]||100;
-    const sc  = d.scores[sub.name][ei];
-    const av  = d.avgScores[sub.name][ei];
-    const gl  = d.goalScores[sub.name][ei];
-    const rnk = d.scores[sub.name]['rank_'+ei]||'';
-    const tot = d.scores[sub.name]['rtotal_'+ei]||'';
-    const {diff,diffClass,rate,r,rc} = calcCells(sc,av,mx);
-    // 目標との差
-    let gdiff='—', gdiffClass='';
-    if(sc!==''&&sc!=null&&gl!==''&&gl!=null&&!isNaN(sc)&&!isNaN(gl)){
-      const gd2=Math.round((parseFloat(sc)-parseFloat(gl))*10)/10;
-      gdiff=(gd2>=0?'+':'')+fmtN(gd2);
-      gdiffClass=gd2>=0?'diff-pos':'diff-neg';
-    }
-    b+=`<tr id="${rid}">
+    const mx  = maxScores[sub.name][ei] || 100;
+    const sc  = scores[sub.name][ei];
+    const av  = avgScores[sub.name][ei];
+    const rnk = scores[sub.name]['rank_'+ei] || '';
+    const tot = scores[sub.name]['rtotal_'+ei] || '';
+    const {diff, diffClass, rate, r, rc} = calcCells(sc, av, mx);
+    b += `<tr id="${rid}">
       <td class="sub ${sub.cat}">${sub.name}</td>
-      <td><input type="number" min="1" max="999" value="${mx}" onchange="onMax('${sub.name}',${ei},this.value)"></td>
-      <td class="goal-cell"><input type="number" min="0" max="${mx}" value="${gl!==''?gl:''}" placeholder="—" oninput="onGoal('${sub.name}',${ei},this.value)"></td>
-      <td><input type="number" min="0" value="${av!==''?av:''}" placeholder="—" oninput="onAvg('${sub.name}',${ei},this.value)"></td>
-      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc!==''?sc:''}" placeholder="—" oninput="onScore('${sub.name}',${ei},this.value)"></td>
+      <td><input type="number" min="1" max="999" value="${mx}"
+            onchange="onMax('${sub.name}',${ei},this.value)"></td>
+      <td><input type="number" min="0" value="${av!==''?av:''}" placeholder="—"
+            oninput="onAvg('${sub.name}',${ei},this.value)"></td>
+      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc!==''?sc:''}" placeholder="—"
+            oninput="onScore('${sub.name}',${ei},this.value)"></td>
       <td class="cell-diff ${diffClass}" id="${rid}-diff">${diff}</td>
-      <td class="${gdiffClass}" id="${rid}-gdiff">${gdiff}</td>
       <td class="cell-rate" id="${rid}-rate">${rate}</td>
       <td class="cell-r ${rc}" id="${rid}-r">${r!=null?r:'—'}</td>
-      <td>
-        <input type="number" min="1" value="${rnk}" placeholder="—" style="width:34px" onchange="onRank('${sub.name}',${ei},'rank',this.value)">
-        <span style="color:var(--text3);font-size:11px">/</span>
-        <input type="number" min="1" value="${tot}" placeholder="全体" style="width:40px" onchange="onRank('${sub.name}',${ei},'rtotal',this.value)">
-      </td>
+      <td><input type="number" min="1" value="${rnk}" placeholder="—" style="width:36px"
+            onchange="onRank('${sub.name}',${ei},'rank',this.value)"><span style="color:var(--text3);font-size:11px"> / </span>
+          <input type="number" min="1" value="${tot}" placeholder="全体" style="width:42px"
+            onchange="onRank('${sub.name}',${ei},'rtotal',this.value)"></td>
     </tr>`;
   });
-  // 合計行
-  const tr=d.totalRanks[ei]||{};
-  const trc=tr.rating?'r'+Math.min(10,Math.max(1,parseInt(tr.rating))):'';
-  b+=`<tr id="row-total" style="background:var(--surface2);font-weight:700">
+
+  // 合計行（評定・順位は入力可）
+  const tr = totalRanks[ei] || {};
+  const trRating = tr.rating || '';
+  const trRank   = tr.rank   || '';
+  const trTotal  = tr.rtotal || '';
+  const trc = trRating ? 'r'+Math.min(10,Math.max(1,parseInt(trRating))) : '';
+  b += `<tr id="row-total" style="background:var(--surface2);font-weight:700">
     <td class="sub" style="font-weight:700">合計</td>
     <td id="total-max">—</td>
-    <td id="total-goal">—</td>
     <td id="total-avg">—</td>
     <td id="total-sc">—</td>
     <td id="total-diff">—</td>
-    <td id="total-gdiff">—</td>
     <td id="total-rate">—</td>
     <td class="${trc}" id="total-r-cell">
-      <input type="number" min="1" max="10" value="${tr.rating||''}" placeholder="—" style="width:34px;font-weight:700"
+      <input type="number" min="1" max="10" value="${trRating}" placeholder="—" style="width:36px;font-weight:700"
         onchange="onTotalRating(${ei},this.value)">
     </td>
     <td>
-      <input type="number" min="1" value="${tr.rank||''}" placeholder="—" style="width:34px" onchange="onTotalRank(${ei},'rank',this.value)">
-      <span style="color:var(--text3);font-size:11px">/</span>
-      <input type="number" min="1" value="${tr.rtotal||''}" placeholder="全体" style="width:40px" onchange="onTotalRank(${ei},'rtotal',this.value)">
+      <input type="number" min="1" value="${trRank}" placeholder="—" style="width:36px"
+        onchange="onTotalRank(${ei},'rank',this.value)"><span style="color:var(--text3);font-size:11px"> / </span>
+      <input type="number" min="1" value="${trTotal}" placeholder="全体" style="width:42px"
+        onchange="onTotalRank(${ei},'rtotal',this.value)">
     </td>
   </tr>`;
-  document.getElementById('tbody').innerHTML=b;
-  updateTotals(); buildSummary();
+  document.getElementById('tbody').innerHTML = b;
+  updateTotals();
+  buildSummary();
 }
 
-function calcCells(sc,av,mx){
-  let diff='—',diffClass='',rate='—',r=null,rc='';
+function calcCells(sc, av, mx){
+  let diff='—', diffClass='', rate='—', r=null, rc='';
   if(sc!==''&&sc!=null&&!isNaN(sc)){
-    rate=fmtN(parseFloat(sc)/mx*100)+'%';
-    r=calcRating(sc,mx); rc=r?'r'+r:'';
+    rate = fmtN(parseFloat(sc)/mx*100) + '%';
+    r = calcRating(sc, mx);
+    rc = r ? 'r'+r : '';
   }
   if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){
-    const dv=Math.round((parseFloat(sc)-parseFloat(av))*10)/10;
-    diff=(dv>=0?'+':'')+fmtN(dv); diffClass=dv>=0?'diff-pos':'diff-neg';
+    const d = Math.round((parseFloat(sc)-parseFloat(av))*10)/10;
+    diff = (d>=0?'+':'')+fmtN(d);
+    diffClass = d>=0?'diff-pos':'diff-neg';
   }
-  return {diff,diffClass,rate,r,rc};
+  return {diff, diffClass, rate, r, rc};
 }
 
 function updateRow(subName){
-  const d=gd(),ei=currentExam,sub=SUBJECTS.find(s=>s.name===subName);
+  const ei = currentExam;
+  const sub = SUBJECTS.find(s=>s.name===subName);
   if(!sub||!hasExam(sub,ei)) return;
-  const rid=rowId(subName);
-  const mx=d.maxScores[subName][ei]||100;
-  const sc=d.scores[subName][ei], av=d.avgScores[subName][ei], gl=d.goalScores[subName][ei];
-  const {diff,diffClass,rate,r,rc}=calcCells(sc,av,mx);
-  let gdiff='—',gdiffClass='';
-  if(sc!==''&&sc!=null&&gl!==''&&gl!=null&&!isNaN(sc)&&!isNaN(gl)){
-    const gv=Math.round((parseFloat(sc)-parseFloat(gl))*10)/10;
-    gdiff=(gv>=0?'+':'')+fmtN(gv); gdiffClass=gv>=0?'diff-pos':'diff-neg';
-  }
-  const q=id=>document.getElementById(id);
-  const upd=(id,txt,cls)=>{const el=q(id);if(el){el.textContent=txt;if(cls!=null)el.className=cls;}};
-  upd(rid+'-diff', diff, 'cell-diff '+diffClass);
-  upd(rid+'-gdiff',gdiff, gdiffClass);
-  upd(rid+'-rate', rate, null);
-  upd(rid+'-r',    r!=null?r:'—', 'cell-r '+(r?'r'+r:''));
-  updateTotals(); buildSummary();
+  const rid = rowId(subName);
+  const mx  = maxScores[subName][ei] || 100;
+  const sc  = scores[subName][ei];
+  const av  = avgScores[subName][ei];
+  const {diff, diffClass, rate, r, rc} = calcCells(sc, av, mx);
+  const dEl=document.getElementById(rid+'-diff');
+  const rateEl=document.getElementById(rid+'-rate');
+  const rEl=document.getElementById(rid+'-r');
+  if(dEl){ dEl.textContent=diff; dEl.className='cell-diff '+diffClass; }
+  if(rateEl) rateEl.textContent = rate;
+  if(rEl){ rEl.textContent=r!=null?r:'—'; rEl.className='cell-r '+(r?'r'+r:''); }
+  updateTotals();
+  buildSummary();
 }
 
 function updateTotals(){
-  const d=gd(),ei=currentExam;
-  let tMax=0,tSc=0,tAv=0,tGl=0,hasSc=false,hasAv=false,hasGl=false;
+  const ei = currentExam;
+  let totalMax=0, totalSc=0, totalAv=0, hasSc=false, hasAv=false;
   SUBJECTS.forEach(sub=>{
     if(!hasExam(sub,ei)) return;
-    const mx=d.maxScores[sub.name][ei]||100;
-    const sc=d.scores[sub.name][ei], av=d.avgScores[sub.name][ei], gl=d.goalScores[sub.name][ei];
-    tMax+=mx;
-    if(sc!==''&&sc!=null&&!isNaN(sc)){tSc+=parseFloat(sc);hasSc=true;}
-    if(av!==''&&av!=null&&!isNaN(av)){tAv+=parseFloat(av);hasAv=true;}
-    if(gl!==''&&gl!=null&&!isNaN(gl)){tGl+=parseFloat(gl);hasGl=true;}
+    const mx=maxScores[sub.name][ei]||100;
+    const sc=scores[sub.name][ei];
+    const av=avgScores[sub.name][ei];
+    totalMax+=mx;
+    if(sc!==''&&sc!=null&&!isNaN(sc)){ totalSc+=parseFloat(sc); hasSc=true; }
+    if(av!==''&&av!=null&&!isNaN(av)){ totalAv+=parseFloat(av); hasAv=true; }
   });
-  const s=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  s('total-max', tMax);
-  s('total-avg', hasAv?fmtN(tAv):'—');
-  s('total-sc',  hasSc?fmtN(tSc):'—');
-  s('total-goal',hasGl?fmtN(tGl):'—');
-  s('total-rate',hasSc?fmtN(tSc/tMax*100)+'%':'—');
-  const diff=hasSc&&hasAv?Math.round((tSc-tAv)*10)/10:null;
-  const gdif=hasSc&&hasGl?Math.round((tSc-tGl)*10)/10:null;
-  const dEl=document.getElementById('total-diff');
-  const gEl=document.getElementById('total-gdiff');
-  if(dEl){dEl.textContent=diff!=null?(diff>=0?'+':'')+fmtN(diff):'—';dEl.className=diff==null?'':diff>=0?'diff-pos':'diff-neg';}
-  if(gEl){gEl.textContent=gdif!=null?(gdif>=0?'+':'')+fmtN(gdif):'—';gEl.className=gdif==null?'':gdif>=0?'diff-pos':'diff-neg';}
+  const setEl = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setEl('total-max',  totalMax);
+  setEl('total-avg',  hasAv ? fmtN(totalAv) : '—');
+  setEl('total-sc',   hasSc ? fmtN(totalSc) : '—');
+  const diff = (hasSc&&hasAv) ? Math.round((totalSc-totalAv)*10)/10 : null;
+  setEl('total-diff', diff!=null ? (diff>=0?'+':'')+fmtN(diff) : '—');
+  setEl('total-rate', hasSc ? fmtN(totalSc/totalMax*100)+'%' : '—');
+  const tdEl=document.getElementById('total-diff');
+  if(tdEl) tdEl.className = diff==null?'':diff>=0?'diff-pos':'diff-neg';
 }
 
 function buildSummary(){
-  const d=gd(),ei=currentExam;
+  const ei=currentExam;
   let total=0,cnt=0,maxR=0,diffTotal=0,diffCnt=0;
-  const tr=d.totalRanks[ei]||{};
+  // 手入力の合計評定があればそれも含める
+  const tr = totalRanks[ei] || {};
   SUBJECTS.forEach(sub=>{
     if(!hasExam(sub,ei)) return;
-    const r=calcRating(d.scores[sub.name][ei],d.maxScores[sub.name][ei]);
+    const r=calcRating(scores[sub.name][ei],maxScores[sub.name][ei]);
     if(r!=null){total+=r;cnt++;if(r>maxR)maxR=r;}
-    const sc=d.scores[sub.name][ei],av=d.avgScores[sub.name][ei];
+    const sc=scores[sub.name][ei],av=avgScores[sub.name][ei];
     if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){diffTotal+=parseFloat(sc)-parseFloat(av);diffCnt++;}
   });
   const avg=cnt?(total/cnt).toFixed(1):'—';
@@ -346,126 +314,151 @@ function buildSummary(){
       <div class="metric-value" style="color:${dc};font-size:18px">${diffCnt&&diffTotal>=0?'+':''}${diffCnt?fmtN(diffTotal/diffCnt):'—'}</div></div>`;
 }
 
-// ===== 入力ハンドラ =====
-window.onMax=(n,i,v)=>{const x=parseFloat(v);if(!isNaN(x)&&x>=1){gd().maxScores[n][i]=Math.round(x);buildTable();scheduleAutosave();}};
-window.onAvg=(n,i,v)=>{gd().avgScores[n][i]=v===''?'':parseFloat(v);updateRow(n);scheduleAutosave();};
-window.onScore=(n,i,v)=>{gd().scores[n][i]=v===''?'':parseFloat(v);updateRow(n);scheduleAutosave();};
-window.onGoal=(n,i,v)=>{gd().goalScores[n][i]=v===''?'':parseFloat(v);updateRow(n);scheduleAutosave();};
-window.onRank=(n,i,k,v)=>{gd().scores[n][k+'_'+i]=v===''?'':parseInt(v);scheduleAutosave();};
-window.onTotalRating=(i,v)=>{
-  const d=gd();if(!d.totalRanks[i])d.totalRanks[i]={};
-  d.totalRanks[i].rating=v===''?'':parseInt(v);
-  const cell=document.getElementById('total-r-cell');
-  if(cell){const rv=d.totalRanks[i].rating;cell.className=rv?'r'+Math.min(10,Math.max(1,rv)):'';}
-  buildSummary();scheduleAutosave();
+window.onMax = (n,i,v) => {
+  const x=parseFloat(v); if(isNaN(x)||x<1) return;
+  maxScores[n][i]=Math.round(x); buildTable(); scheduleAutosave();
 };
-window.onTotalRank=(i,k,v)=>{
-  const d=gd();if(!d.totalRanks[i])d.totalRanks[i]={};
-  d.totalRanks[i][k]=v===''?'':parseInt(v);scheduleAutosave();
+window.onAvg = (n,i,v) => {
+  avgScores[n][i]=v===''?'':parseFloat(v); updateRow(n); scheduleAutosave();
+  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs();
+};
+window.onScore = (n,i,v) => {
+  scores[n][i]=v===''?'':parseFloat(v); updateRow(n); scheduleAutosave();
+  if(document.getElementById('sec-graph').classList.contains('active')) drawGraphs();
+};
+window.onRank = (n,i,k,v) => {
+  scores[n][k+'_'+i]=v===''?'':parseInt(v); scheduleAutosave();
+};
+window.onTotalRating = (i,v) => {
+  if(!totalRanks[i]) totalRanks[i]={};
+  totalRanks[i].rating = v===''?'':parseInt(v);
+  // セルの色クラスを更新
+  const cell = document.getElementById('total-r-cell');
+  if(cell){
+    const rv = totalRanks[i].rating;
+    cell.className = rv ? 'r'+Math.min(10,Math.max(1,rv)) : '';
+  }
+  buildSummary(); scheduleAutosave();
+};
+window.onTotalRank = (i,k,v) => {
+  if(!totalRanks[i]) totalRanks[i]={};
+  totalRanks[i][k]=v===''?'':parseInt(v); scheduleAutosave();
 };
 
-// ===== 定期考査グラフ =====
-window.switchGraphMode = mode => {
-  currentGraphMode=mode;
-  document.querySelectorAll('.graph-mode-btn').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
-  document.getElementById('graph-sub-ctrl').style.display=mode==='sub'?'flex':'none';
-  buildTeikiGraphs();
-};
-window.onSubjectChange = () => {
-  currentSubject=document.getElementById('graph-sub-sel').value;
-  buildTeikiGraphs();
-};
-
-function buildTeikiGraphs(){
-  if(currentGraphMode==='total') drawTotalGraph();
-  else drawSubGraph();
+// ===== グラフ =====
+function buildGraphSelect(){
+  const sel = document.getElementById('graph-sel');
+  sel.innerHTML = `<option value="__all__">全教科（評定）</option>`
+    + SUBJECTS.map(s=>`<option value="${s.name}">${s.name}</option>`).join('');
 }
 
-function drawTotalGraph(){
-  document.getElementById('teiki-graph-total').style.display='block';
-  document.getElementById('teiki-graph-sub').style.display='none';
-  const d=gd();
-  // 各考査の合計点・目標合計
-  const labels=[], scData=[], glData=[], avData=[];
-  EXAMS.forEach((e,i)=>{
-    labels.push(e);
-    let tSc=0,tGl=0,tAv=0,hasSc=false,hasGl=false,hasAv=false;
-    SUBJECTS.forEach(sub=>{
-      if(!hasExam(sub,i)) return;
-      const sc=d.scores[sub.name][i], gl=d.goalScores[sub.name][i], av=d.avgScores[sub.name][i];
-      if(sc!==''&&sc!=null&&!isNaN(sc)){tSc+=parseFloat(sc);hasSc=true;}
-      if(gl!==''&&gl!=null&&!isNaN(gl)){tGl+=parseFloat(gl);hasGl=true;}
-      if(av!==''&&av!=null&&!isNaN(av)){tAv+=parseFloat(av);hasAv=true;}
-    });
-    scData.push(hasSc?Math.round(tSc*10)/10:null);
-    glData.push(hasGl?Math.round(tGl*10)/10:null);
-    avData.push(hasAv?Math.round(tAv*10)/10:null);
-  });
-  if(teikiAllChart) teikiAllChart.destroy();
-  teikiAllChart=new Chart(document.getElementById('teikiAllChart'),{
-    type:'line',
-    data:{labels,datasets:[
-      {label:'自分の合計点',data:scData,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2.5,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'},
-      {label:'目標合計点',  data:glData,borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#1D9E75'},
-      {label:'平均合計点',  data:avData,borderColor:'#e67e22',backgroundColor:'transparent',borderWidth:2,borderDash:[3,3],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#e67e22'},
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},boxWidth:14,padding:10}}},
-      scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}}
-  });
-}
+window.drawGraphs = () => {
+  const name = document.getElementById('graph-sel').value;
+  if(name==='__all__') { drawAllGraph(); return; }
+  drawSingleGraph(name);
+};
 
-function drawSubGraph(){
-  document.getElementById('teiki-graph-total').style.display='none';
-  document.getElementById('teiki-graph-sub').style.display='block';
-  const d=gd(), sub=SUBJECTS.find(s=>s.name===currentSubject);
-  if(!sub) return;
+function drawSingleGraph(name){
+  const sub = SUBJECTS.find(s=>s.name===name);
   const labels=[],ratings=[],rates=[],diffs=[];
   EXAMS.forEach((e,i)=>{
     if(!hasExam(sub,i)) return;
     labels.push(e);
-    const sc=d.scores[sub.name][i], mx=d.maxScores[sub.name][i]||100, av=d.avgScores[sub.name][i];
+    const sc=scores[sub.name][i],mx=maxScores[sub.name][i]||100,av=avgScores[sub.name][i];
     ratings.push(calcRating(sc,mx));
     rates.push(sc!==''&&sc!=null?Math.round(parseFloat(sc)/mx*100):null);
-    diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
+    diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null
+      ?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
   });
-  if(teikiLineChart) teikiLineChart.destroy();
-  if(teikiSubChart)  teikiSubChart.destroy();
+
+  document.getElementById('graph-single').style.display='block';
+  document.getElementById('graph-all').style.display='none';
+
+  if(lineChart) lineChart.destroy();
+  if(barChart)  barChart.destroy();
+  if(diffChart) diffChart.destroy();
   const gc='rgba(0,0,0,0.06)';
-  teikiLineChart=new Chart(document.getElementById('teikiLineChart'),{type:'line',data:{labels,datasets:[{data:ratings,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:1},grid:{color:gc}},x:{grid:{display:false}}}}});
-  const dc2=diffs.map(d=>d==null?'transparent':d>=0?'rgba(29,158,117,0.7)':'rgba(216,90,48,0.7)');
-  teikiSubChart=new Chart(document.getElementById('teikiSubChart'),{type:'bar',data:{labels,datasets:[{data:diffs,backgroundColor:dc2,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gc},ticks:{callback:v=>(v>=0?'+':'')+v}},x:{grid:{display:false}}}}});
+  lineChart=new Chart(document.getElementById('lineChart'),{type:'line',data:{labels,datasets:[{data:ratings,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:1},grid:{color:gc}},x:{grid:{display:false}}}}});
+  barChart=new Chart(document.getElementById('barChart'),{type:'bar',data:{labels,datasets:[{data:rates,backgroundColor:'rgba(74,63,212,0.18)',borderColor:'#4a3fd4',borderWidth:1.5,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'},grid:{color:gc}},x:{grid:{display:false}}}}});
+  const dc=diffs.map(d=>d==null?'transparent':d>=0?'rgba(29,158,117,0.7)':'rgba(216,90,48,0.7)');
+  diffChart=new Chart(document.getElementById('diffChart'),{type:'bar',data:{labels,datasets:[{data:diffs,backgroundColor:dc,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gc},ticks:{callback:v=>(v>=0?'+':'')+v}},x:{grid:{display:false}}}}});
 }
 
+function drawAllGraph(){
+  document.getElementById('graph-single').style.display='none';
+  document.getElementById('graph-all').style.display='block';
+
+  if(lineChart)  lineChart.destroy();
+  if(barChart)   barChart.destroy();
+  if(diffChart)  diffChart.destroy();
+
+  // 全教科の評定をEXAMSラベルで重ねる
+  const labels = EXAMS;
+  const datasets = SUBJECTS.map((sub,idx)=>({
+    label: sub.name,
+    data: EXAMS.map((_,i)=> hasExam(sub,i) ? calcRating(scores[sub.name][i], maxScores[sub.name][i]||100) : null),
+    borderColor: COLORS[idx % COLORS.length],
+    backgroundColor: 'transparent',
+    pointBackgroundColor: COLORS[idx % COLORS.length],
+    borderWidth: 2,
+    tension: 0.35,
+    spanGaps: false,
+    pointRadius: 4,
+  }));
+
+  if(allChart) allChart.destroy();
+  allChart = new Chart(document.getElementById('allChart'),{
+    type:'line',
+    data:{labels, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{
+          display:true,
+          position:'bottom',
+          labels:{font:{size:11}, boxWidth:14, padding:10}
+        }
+      },
+      scales:{
+        y:{min:0,max:10,ticks:{stepSize:1},grid:{color:'rgba(0,0,0,0.06)'}},
+        x:{grid:{display:false}}
+      }
+    }
+  });
+}
+
+let allChart = null;
+
 // ===== 模試 =====
-window.addMoshi=()=>{
-  const d=gd();
-  d.moshiCount=(d.moshiCount||0)+1;
-  d.moshiData.push({id:d.moshiCount,name:`模試${d.moshiCount}`,
-    kokugo:{score:'',rank:'',total:'',hensa:''},
-    sugaku:{score:'',rank:'',total:'',hensa:''},
-    eigo:  {score:'',rank:'',total:'',hensa:''}});
-  renderMoshi(); buildMoshiGraphs(); scheduleAutosave();
+window.addMoshi = () => {
+  moshiCount++;
+  moshiData.push({id:moshiCount,name:`模試${moshiCount}`,
+    kokugo:{score:'',rank:'',total:''},
+    sugaku:{score:'',rank:'',total:''},
+    eigo:  {score:'',rank:'',total:''}});
+  renderMoshi(); scheduleAutosave();
 };
-window.deleteMoshi=id=>{
+window.deleteMoshi = id => {
   if(!confirm('削除しますか？')) return;
-  gd().moshiData=gd().moshiData.filter(m=>m.id!==id);
-  renderMoshi(); buildMoshiGraphs(); scheduleAutosave();
+  moshiData=moshiData.filter(m=>m.id!==id);
+  renderMoshi(); scheduleAutosave();
 };
-window.updateMoshi=(id,sub,key,val)=>{
-  const m=gd().moshiData.find(x=>x.id===id);
-  if(m){m[sub][key]=val;buildMoshiGraphs();scheduleAutosave();}
+window.updateMoshi = (id,sub,key,val) => {
+  const m=moshiData.find(x=>x.id===id);
+  if(m){ m[sub][key]=val; drawMoshiChart(); scheduleAutosave(); }
 };
-window.updateMoshiName=(id,val)=>{
-  const m=gd().moshiData.find(x=>x.id===id);
-  if(m){m.name=val;buildMoshiGraphs();scheduleAutosave();}
+window.updateMoshiName = (id,val) => {
+  const m=moshiData.find(x=>x.id===id);
+  if(m){ m.name=val; drawMoshiChart(); scheduleAutosave(); }
 };
 
 function renderMoshi(){
   const area=document.getElementById('moshi-list');
-  const md=gd().moshiData||[];
-  if(!md.length){area.innerHTML='<div class="empty-state">「追加」ボタンで模試を記録できます。</div>';return;}
-  area.innerHTML=md.map(m=>`
+  if(!moshiData.length){
+    area.innerHTML='<div class="empty-state">「追加」ボタンで模試を記録できます。</div>';
+    drawMoshiChart(); return;
+  }
+  area.innerHTML=moshiData.map(m=>`
     <div class="moshi-card">
       <div class="moshi-name-row">
         <input class="moshi-name-input" value="${m.name}" oninput="updateMoshiName(${m.id},this.value)">
@@ -476,70 +469,52 @@ function renderMoshi(){
           <div class="moshi-subj">
             <div class="moshi-subj-label">${label}</div>
             <div class="field-label">点数</div>
-            <input type="number" class="field-input" value="${m[sub].score}" placeholder="—" oninput="updateMoshi(${m.id},'${sub}','score',this.value)">
-            <div class="field-label">偏差値</div>
-            <input type="number" class="field-input" step="0.1" value="${m[sub].hensa}" placeholder="—" oninput="updateMoshi(${m.id},'${sub}','hensa',this.value)">
+            <input type="number" class="field-input" value="${m[sub].score}" placeholder="—"
+              oninput="updateMoshi(${m.id},'${sub}','score',this.value)">
             <div class="field-label">順位</div>
             <div class="rank-row">
-              <input type="number" class="field-input" value="${m[sub].rank}" placeholder="—" style="width:48%" oninput="updateMoshi(${m.id},'${sub}','rank',this.value)">
+              <input type="number" class="field-input" value="${m[sub].rank}" placeholder="—"
+                style="width:48%" oninput="updateMoshi(${m.id},'${sub}','rank',this.value)">
               <span class="rank-sep">/</span>
-              <input type="number" class="field-input" value="${m[sub].total}" placeholder="全体" style="width:48%" oninput="updateMoshi(${m.id},'${sub}','total',this.value)">
+              <input type="number" class="field-input" value="${m[sub].total}" placeholder="全体"
+                style="width:48%" oninput="updateMoshi(${m.id},'${sub}','total',this.value)">
             </div>
           </div>`).join('')}
       </div>
     </div>`).join('');
+  drawMoshiChart();
 }
 
-function buildMoshiGraphs(){
-  const md=gd().moshiData||[];
-  if(moshiScoreChart) moshiScoreChart.destroy();
-  if(moshiHensaChart) moshiHensaChart.destroy();
-  if(!md.length) return;
-  const labels=md.map(m=>m.name);
-  const mk=(sub,key)=>md.map(m=>m[sub][key]===''?null:parseFloat(m[sub][key]));
-  const commonOpts=(yLabel)=>({
-    responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},boxWidth:14,padding:10}}},
-    scales:{y:{beginAtZero:false,title:{display:!!yLabel,text:yLabel},grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}
-  });
-  const ds=(label,sub,key,color,dash=[])=>({
-    label,data:mk(sub,key),borderColor:color,backgroundColor:'transparent',
-    pointBackgroundColor:color,borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5,
-    ...(dash.length?{borderDash:dash}:{})
-  });
-  moshiScoreChart=new Chart(document.getElementById('moshiScoreChart'),{
+function drawMoshiChart(){
+  if(moshiChart) moshiChart.destroy();
+  if(!moshiData.length) return;
+  const labels=moshiData.map(m=>m.name);
+  const mk=sub=>moshiData.map(m=>m[sub].score===''?null:parseFloat(m[sub].score));
+  moshiChart=new Chart(document.getElementById('moshiChart'),{
     type:'line',
     data:{labels,datasets:[
-      ds('国語','kokugo','score','#D85A30'),
-      ds('数学','sugaku','score','#4a3fd4',[5,4]),
-      ds('英語','eigo',  'score','#1D9E75',[2,3]),
+      {label:'国語',data:mk('kokugo'),borderColor:'#D85A30',backgroundColor:'transparent',pointBackgroundColor:'#D85A30',borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5},
+      {label:'数学',data:mk('sugaku'),borderColor:'#4a3fd4',backgroundColor:'transparent',pointBackgroundColor:'#4a3fd4',borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5,borderDash:[5,4]},
+      {label:'英語',data:mk('eigo'),  borderColor:'#1D9E75',backgroundColor:'transparent',pointBackgroundColor:'#1D9E75',borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:5,borderDash:[2,3]},
     ]},
-    options:commonOpts('点数')
-  });
-  moshiHensaChart=new Chart(document.getElementById('moshiHensaChart'),{
-    type:'line',
-    data:{labels,datasets:[
-      ds('国語','kokugo','hensa','#D85A30'),
-      ds('数学','sugaku','hensa','#4a3fd4',[5,4]),
-      ds('英語','eigo',  'hensa','#1D9E75',[2,3]),
-    ]},
-    options:commonOpts('偏差値')
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}}
   });
 }
 </script>
 
 <style>
-:root{
-  --bg:#f7f6f3;--surface:#fff;--surface2:#f0efe9;
-  --border:rgba(0,0,0,0.08);--border2:rgba(0,0,0,0.15);
-  --text:#1a1a1a;--text2:#666;--text3:#999;
-  --accent:#4a3fd4;--accent-light:#eeedfb;
-  --r1:#fde8e8;--r1t:#9b2424;
-  --r4:#fef3de;--r4t:#7a4a08;
-  --r6:#e8f5df;--r6t:#2e5e0e;
-  --r8:#ddf4ec;--r8t:#0d5e3f;
-  --r10:#eeedfb;--r10t:#3029a0;
-  --radius:10px;--radius-sm:6px;
+:root {
+  --bg:#f7f6f3; --surface:#fff; --surface2:#f0efe9;
+  --border:rgba(0,0,0,0.08); --border2:rgba(0,0,0,0.15);
+  --text:#1a1a1a; --text2:#666; --text3:#999;
+  --accent:#4a3fd4; --accent-light:#eeedfb;
+  --r1:#fde8e8; --r1t:#9b2424;
+  --r4:#fef3de; --r4t:#7a4a08;
+  --r6:#e8f5df; --r6t:#2e5e0e;
+  --r8:#ddf4ec; --r8t:#0d5e3f;
+  --r10:#eeedfb; --r10t:#3029a0;
+  --radius:10px; --radius-sm:6px;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px}
@@ -549,46 +524,43 @@ html,body{height:100%;font-family:-apple-system,'Hiragino Sans',sans-serif;backg
 .login-card h1{font-size:20px;font-weight:700;margin-bottom:8px}
 .login-card p{font-size:13px;color:var(--text2);margin-bottom:28px;line-height:1.6}
 .btn-google{display:flex;align-items:center;gap:12px;padding:12px 20px;border:1.5px solid var(--border2);border-radius:8px;background:var(--surface);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;width:100%;justify-content:center}
-.btn-google:active{opacity:.7}
+.btn-google:active{opacity:0.7}
 
 .app{display:none;flex-direction:column;height:100vh}
-.topbar{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-.topbar h1{font-size:15px;font-weight:700;flex:1}
-.grade-tabs{display:flex;gap:4px}
-.grade-tab{padding:4px 12px;font-size:12px;font-weight:600;border:1.5px solid var(--border2);border-radius:99px;color:var(--text2);cursor:pointer;background:var(--surface)}
-.grade-tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.user-info{display:flex;align-items:center;gap:6px}
-#user-avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;border:1px solid var(--border2)}
-#user-name{font-size:11px;color:var(--text2);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
+.topbar h1{font-size:16px;font-weight:700;flex:1}
+.user-info{display:flex;align-items:center;gap:7px}
+#user-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1px solid var(--border2)}
+#user-name{font-size:12px;color:var(--text2);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .save-status{font-size:11px;color:var(--text3)}
 .btn{padding:5px 12px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:12px;cursor:pointer;white-space:nowrap}
-.btn:active{opacity:.7}
+.btn:active{opacity:0.7}
 .btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn-danger{color:#c0392b;border-color:#e9b0af}
 
-.tabs{display:flex;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0}
-.tab{padding:10px 20px;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs{display:flex;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.tab{padding:10px 18px;font-size:13px;color:var(--text2);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;flex-shrink:0}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 
 .content{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px}
 .section{display:none}.section.active{display:block}
 
-.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
-.metric-label{font-size:10px;color:var(--text3);margin-bottom:3px}
-.metric-value{font-size:20px;font-weight:700;color:var(--accent)}
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
+.metric-label{font-size:11px;color:var(--text3);margin-bottom:4px}
+.metric-value{font-size:22px;font-weight:700;color:var(--accent)}
 
-.exam-pills{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-.exam-pill{padding:6px 16px;font-size:13px;font-weight:500;border:1.5px solid var(--border2);border-radius:99px;background:var(--surface);color:var(--text2);cursor:pointer;white-space:nowrap}
+.exam-pills{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.exam-pill{padding:7px 18px;font-size:13px;font-weight:500;border:1.5px solid var(--border2);border-radius:99px;background:var(--surface);color:var(--text2);cursor:pointer;white-space:nowrap}
 .exam-pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 
 .table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface)}
 table{border-collapse:collapse;white-space:nowrap;width:100%}
-th,td{padding:7px 8px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);font-size:12px;text-align:center}
+th,td{padding:8px 9px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);font-size:12px;text-align:center}
 th:last-child,td:last-child{border-right:none}
 tr:last-child td{border-bottom:none}
 th{background:var(--surface2);color:var(--text2);font-weight:600}
-td.sub{text-align:left;font-weight:600;font-size:11px;min-width:110px;max-width:110px;white-space:normal;word-break:break-all;line-height:1.4}
+td.sub{text-align:left;font-weight:600;font-size:12px;min-width:130px;max-width:130px;white-space:normal;word-break:break-all;line-height:1.4}
 td.sub.kokugo{background:#fde8e8;color:#8b1a1a}
 td.sub.sugaku{background:#ddf4fb;color:#0a5a7a}
 td.sub.eigo{background:#fde8f4;color:#8b1a5a}
@@ -597,12 +569,10 @@ td.sub.shakai{background:#f3ead8;color:#6b4210}
 td.sub.other{background:var(--surface2);color:var(--text)}
 td.na{background:#f5f5f3;color:var(--text3)}
 td.score-cell{background:#fde8e8}
-td.goal-cell{background:#eaf6ee}
-td input[type=number]{width:52px;border:none;background:transparent;text-align:center;font-size:12px;color:var(--text);outline:none;font-family:inherit;-moz-appearance:textfield}
+td input[type=number]{width:56px;border:none;background:transparent;text-align:center;font-size:12px;color:var(--text);outline:none;font-family:inherit;-moz-appearance:textfield}
 td input[type=number]::-webkit-inner-spin-button,td input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
 td input[type=number]:focus{background:var(--accent-light);border-radius:4px}
 td.score-cell input{color:#8b1a1a;font-weight:600}
-td.goal-cell input{color:#1a6b38;font-weight:600}
 td.r1,td.r2,td.r3{background:var(--r1);color:var(--r1t);font-weight:600}
 td.r4,td.r5{background:var(--r4);color:var(--r4t);font-weight:600}
 td.r6,td.r7{background:var(--r6);color:var(--r6t);font-weight:600}
@@ -612,22 +582,14 @@ td.diff-pos{color:#0d5e3f;font-size:12px;font-weight:600}
 td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 .note{font-size:11px;color:var(--text3);margin-top:8px;line-height:1.6}
 
-/* グラフエリア */
-.graph-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:14px}
-.graph-panel-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px}
-.graph-mode-btns{display:flex;gap:6px;margin-bottom:12px}
-.graph-mode-btn{padding:5px 14px;font-size:12px;border:1.5px solid var(--border2);border-radius:99px;background:var(--surface);color:var(--text2);cursor:pointer}
-.graph-mode-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.graph-sub-ctrl{display:none;align-items:center;gap:8px;margin-bottom:10px}
-.graph-sub-ctrl label{font-size:12px;color:var(--text2)}
-.graph-sub-ctrl select{font-size:12px;padding:4px 8px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text)}
+.graph-ctrl{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;flex-wrap:wrap}
+.graph-ctrl label{font-size:12px;color:var(--text2)}
+.graph-ctrl select{font-size:13px;padding:5px 8px;border:1px solid var(--border2);border-radius:var(--radius-sm);background:var(--surface);color:var(--text)}
+.chart-block{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:14px}
+.chart-block-title{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:10px}
 .chart-wrap{position:relative;width:100%;height:220px}
-.chart-sub-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
-.chart-block-sm{background:var(--surface2);border-radius:8px;padding:10px}
-.chart-block-sm-title{font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px}
-.chart-wrap-sm{position:relative;width:100%;height:160px}
+.chart-wrap-tall{position:relative;width:100%;height:320px}
 
-/* 模試 */
 .moshi-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .moshi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:10px}
 .moshi-name-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -642,8 +604,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 .rank-row .field-input{margin-bottom:0}
 .rank-sep{font-size:11px;color:var(--text3)}
 .empty-state{text-align:center;padding:40px 20px;color:var(--text3);font-size:13px}
-.moshi-graphs{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
-@media(max-width:600px){.moshi-graphs{grid-template-columns:1fr}.chart-sub-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -662,7 +622,6 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 <div class="app" id="app">
   <div class="topbar">
     <h1>📊 成績管理</h1>
-    <div class="grade-tabs" id="grade-tabs"></div>
     <span class="save-status" id="save-status">読み込み中...</span>
     <div class="user-info">
       <img id="user-avatar" src="" alt="">
@@ -673,82 +632,69 @@ td.diff-neg{color:#9b2424;font-size:12px;font-weight:600}
 
   <div class="tabs">
     <div class="tab active" onclick="switchTab('teiki')">定期考査</div>
+    <div class="tab" onclick="switchTab('graph')">推移グラフ</div>
     <div class="tab" onclick="switchTab('moshi')">模試</div>
   </div>
 
   <div class="content">
-
-    <!-- 定期考査 -->
     <div id="sec-teiki" class="section active">
       <div class="summary" id="summary"></div>
       <div class="exam-pills" id="exam-pills"></div>
       <div class="table-wrap">
         <table><thead id="thead"></thead><tbody id="tbody"></tbody></table>
       </div>
-      <p class="note">※ 評定は得点率×9+1（1〜10）。差＝自分−平均点。目標差＝自分−目標点。合計の評定は手入力。</p>
+      <p class="note">※ 評定は得点率×9+1（1〜10に補正）。差 = 自分の点数 − 平均点。合計の評定は手入力。</p>
+    </div>
 
-      <!-- 定期考査グラフ -->
-      <div class="graph-panel">
-        <div class="graph-panel-title">📈 推移グラフ</div>
-        <div class="graph-mode-btns">
-          <button class="graph-mode-btn active" data-mode="total" onclick="switchGraphMode('total')">合計点推移</button>
-          <button class="graph-mode-btn" data-mode="sub" onclick="switchGraphMode('sub')">科目別</button>
-        </div>
-        <div class="graph-sub-ctrl" id="graph-sub-ctrl">
-          <label>科目：</label>
-          <select id="graph-sub-sel" onchange="onSubjectChange()"></select>
-        </div>
+    <div id="sec-graph" class="section">
+      <div class="graph-ctrl">
+        <label>科目：</label>
+        <select id="graph-sel" onchange="drawGraphs()"></select>
+      </div>
 
-        <!-- 合計点グラフ -->
-        <div id="teiki-graph-total">
-          <div class="chart-wrap"><canvas id="teikiAllChart"></canvas></div>
+      <!-- 全教科グラフ -->
+      <div id="graph-all" style="display:none">
+        <div class="chart-block">
+          <div class="chart-block-title">全教科 評定の推移（10段階）</div>
+          <div class="chart-wrap-tall"><canvas id="allChart"></canvas></div>
         </div>
+      </div>
 
-        <!-- 科目別グラフ -->
-        <div id="teiki-graph-sub" style="display:none">
-          <div class="chart-block-sm-title" style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px">評定の推移</div>
-          <div class="chart-wrap"><canvas id="teikiLineChart"></canvas></div>
-          <div class="chart-sub-grid">
-            <div class="chart-block-sm">
-              <div class="chart-block-sm-title">平均点との差</div>
-              <div class="chart-wrap-sm"><canvas id="teikiSubChart"></canvas></div>
-            </div>
-          </div>
+      <!-- 個別科目グラフ -->
+      <div id="graph-single">
+        <div class="chart-block">
+          <div class="chart-block-title">評定の推移（10段階）</div>
+          <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-block-title">得点率の推移（%）</div>
+          <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+        </div>
+        <div class="chart-block">
+          <div class="chart-block-title">平均点との差の推移</div>
+          <div class="chart-wrap"><canvas id="diffChart"></canvas></div>
         </div>
       </div>
     </div>
 
-    <!-- 模試 -->
     <div id="sec-moshi" class="section">
       <div class="moshi-header">
         <span style="font-size:15px;font-weight:600">模試記録</span>
         <button class="btn btn-primary" onclick="addMoshi()">＋ 追加</button>
       </div>
       <div id="moshi-list"></div>
-
-      <div class="moshi-graphs">
-        <div class="graph-panel" style="margin-top:0">
-          <div class="graph-panel-title">📈 点数推移</div>
-          <div class="chart-wrap"><canvas id="moshiScoreChart"></canvas></div>
+      <div class="chart-block" style="margin-top:16px">
+        <div class="chart-block-title">点数推移</div>
+        <div style="display:flex;gap:16px;font-size:11px;color:var(--text2);margin-bottom:8px">
+          <span><span style="display:inline-block;width:10px;height:10px;background:#D85A30;border-radius:2px;margin-right:4px"></span>国語</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#4a3fd4;border-radius:2px;margin-right:4px"></span>数学</span>
+          <span><span style="display:inline-block;width:10px;height:10px;background:#1D9E75;border-radius:2px;margin-right:4px"></span>英語</span>
         </div>
-        <div class="graph-panel" style="margin-top:0">
-          <div class="graph-panel-title">📊 偏差値推移</div>
-          <div class="chart-wrap"><canvas id="moshiHensaChart"></canvas></div>
-        </div>
+        <div class="chart-wrap"><canvas id="moshiChart"></canvas></div>
       </div>
     </div>
-
   </div>
 </div>
 
-<script>
-// 科目セレクトの初期化（モジュール外から呼べるようにする）
-window.addEventListener('load', () => {
-  const sel = document.getElementById('graph-sub-sel');
-  if(sel && typeof SUBJECTS !== 'undefined'){
-    sel.innerHTML = SUBJECTS.map(s=>`<option value="${s.name}">${s.name}</option>`).join('');
-  }
-});
-</script>
 </body>
 </html>
