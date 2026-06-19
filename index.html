@@ -469,6 +469,7 @@ function drawSubGraph(){
 window.addMoshi=()=>{
   const d=gd(); d.moshiCount=(d.moshiCount||0)+1;
   d.moshiData.push({id:d.moshiCount,name:`模試${d.moshiCount}`,
+    total:{score:'',rank:'',totalCount:'',hensa:''},
     kokugo:{score:'',rank:'',total:'',hensa:''},
     sugaku:{score:'',rank:'',total:'',hensa:''},
     eigo:  {score:'',rank:'',total:'',hensa:''}});
@@ -492,11 +493,34 @@ function renderMoshi(){
   const area=document.getElementById('moshi-list');
   const md=gd().moshiData||[];
   if(!md.length){area.innerHTML='<div class="empty-state">「追加」ボタンで模試を記録できます。</div>';return;}
-  area.innerHTML=md.map(m=>`
+  area.innerHTML=md.map(m=>{
+    if(!m.total) m.total={score:'',rank:'',totalCount:'',hensa:''};
+    return `
     <div class="moshi-card">
       <div class="moshi-name-row">
         <input class="moshi-name-input" value="${m.name}" oninput="updateMoshiName(${m.id},this.value)">
         <button class="btn btn-danger" onclick="deleteMoshi(${m.id})">削除</button>
+      </div>
+      <div class="moshi-total-row">
+        <div class="moshi-total-label">総合点</div>
+        <div class="moshi-total-fields">
+          <div>
+            <div class="field-label">点数</div>
+            <input type="number" class="field-input" value="${m.total.score}" placeholder="—" oninput="updateMoshi(${m.id},'total','score',this.value)">
+          </div>
+          <div>
+            <div class="field-label">偏差値</div>
+            <input type="number" class="field-input" step="0.1" value="${m.total.hensa}" placeholder="—" oninput="updateMoshi(${m.id},'total','hensa',this.value)">
+          </div>
+          <div>
+            <div class="field-label">順位</div>
+            <div class="rank-row">
+              <input type="number" class="field-input" value="${m.total.rank}" placeholder="—" style="width:46%" oninput="updateMoshi(${m.id},'total','rank',this.value)">
+              <span class="rank-sep">/</span>
+              <input type="number" class="field-input" value="${m.total.totalCount}" placeholder="全体" style="width:46%" oninput="updateMoshi(${m.id},'total','totalCount',this.value)">
+            </div>
+          </div>
+        </div>
       </div>
       <div class="moshi-subjects">
         ${[['kokugo','国語'],['sugaku','数学'],['eigo','英語']].map(([sub,label])=>`
@@ -514,7 +538,8 @@ function renderMoshi(){
             </div>
           </div>`).join('')}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 function buildMoshiGraphs(){
@@ -528,8 +553,8 @@ function buildMoshiGraphs(){
     plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},boxWidth:12,padding:8}}},
     scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}};
   const ds=(label,sub,key,color,dash=[])=>({label,data:mk(sub,key),borderColor:color,backgroundColor:'transparent',pointBackgroundColor:color,borderWidth:2.5,tension:0.3,spanGaps:false,pointRadius:4,...(dash.length?{borderDash:dash}:{})});
-  moshiScoreChart=new Chart(document.getElementById('moshiScoreChart'),{type:'line',data:{labels,datasets:[ds('国語','kokugo','score','#D85A30'),ds('数学','sugaku','score','#4a3fd4',[5,4]),ds('英語','eigo','score','#1D9E75',[2,3])]},options:{...baseOpts}});
-  moshiHensaChart=new Chart(document.getElementById('moshiHensaChart'),{type:'line',data:{labels,datasets:[ds('国語','kokugo','hensa','#D85A30'),ds('数学','sugaku','hensa','#4a3fd4',[5,4]),ds('英語','eigo','hensa','#1D9E75',[2,3])]},options:{...baseOpts}});
+  moshiScoreChart=new Chart(document.getElementById('moshiScoreChart'),{type:'line',data:{labels,datasets:[ds('総合','total','score','#2c3e50',[1,2]),ds('国語','kokugo','score','#D85A30'),ds('数学','sugaku','score','#4a3fd4',[5,4]),ds('英語','eigo','score','#1D9E75',[2,3])]},options:{...baseOpts}});
+  moshiHensaChart=new Chart(document.getElementById('moshiHensaChart'),{type:'line',data:{labels,datasets:[ds('総合','total','hensa','#2c3e50',[1,2]),ds('国語','kokugo','hensa','#D85A30'),ds('数学','sugaku','hensa','#4a3fd4',[5,4]),ds('英語','eigo','hensa','#1D9E75',[2,3])]},options:{...baseOpts}});
 }
 </script>
 
@@ -655,6 +680,9 @@ td.diff-neg{color:#9b2424;font-weight:600}
 .moshi-name-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .moshi-name-input{font-size:14px;font-weight:600;border:none;background:transparent;color:var(--text);border-bottom:1px solid var(--border2);width:130px;font-family:inherit;outline:none}
 .moshi-subjects{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.moshi-total-row{background:var(--accent-light);border-radius:8px;padding:10px;margin-bottom:10px}
+.moshi-total-label{font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;padding-bottom:3px;border-bottom:2px solid rgba(74,63,212,0.2)}
+.moshi-total-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
 .moshi-subj-label{font-size:11px;font-weight:600;color:var(--text2);margin-bottom:5px;padding-bottom:3px;border-bottom:2px solid var(--border)}
 .field-label{font-size:10px;color:var(--text3);margin-bottom:2px}
 .field-input{width:100%;border:1px solid var(--border);border-radius:5px;padding:4px 6px;font-size:12px;background:var(--bg);color:var(--text);font-family:inherit;margin-bottom:5px;-moz-appearance:textfield}
