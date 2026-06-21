@@ -498,6 +498,11 @@ window.updateMoshiName=(id,val)=>{
   const m=gd().moshiData.find(x=>x.id===id);
   if(m){m.name=val;buildMoshiGraphs();scheduleAutosave();}
 };
+window.toggleMoshiExpand=(id)=>{
+  expandedMoshiId = expandedMoshiId===id ? null : id;
+  renderMoshi();
+};
+let expandedMoshiId = null;
 
 function renderMoshi(){
   const area=document.getElementById('moshi-list');
@@ -505,11 +510,34 @@ function renderMoshi(){
   if(!md.length){area.innerHTML='<div class="empty-state">「追加」ボタンで模試を記録できます。</div>';return;}
   area.innerHTML=md.map(m=>{
     if(!m.total) m.total={score:'',rank:'',totalCount:'',hensa:''};
+    const isExpanded = expandedMoshiId === m.id;
+
+    if(!isExpanded){
+      // ===== 簡易表示（折りたたみ） =====
+      const sc = m.total.score!==''&&m.total.score!=null ? m.total.score : '—';
+      const hs = m.total.hensa!==''&&m.total.hensa!=null ? m.total.hensa : '—';
+      return `
+      <div class="moshi-card moshi-card-collapsed" onclick="toggleMoshiExpand(${m.id})">
+        <div class="moshi-collapsed-row">
+          <div class="moshi-collapsed-name">${m.name}</div>
+          <div class="moshi-collapsed-stats">
+            <span class="mc-stat"><span class="mc-stat-label">総合点</span><span class="mc-stat-val">${sc}</span></span>
+            <span class="mc-stat"><span class="mc-stat-label">偏差値</span><span class="mc-stat-val">${hs}</span></span>
+          </div>
+          <button class="btn-expand" onclick="event.stopPropagation();toggleMoshiExpand(${m.id})">詳細</button>
+        </div>
+      </div>`;
+    }
+
+    // ===== 詳細表示（展開） =====
     return `
-    <div class="moshi-card">
+    <div class="moshi-card moshi-card-expanded">
       <div class="moshi-name-row">
         <input class="moshi-name-input" value="${m.name}" oninput="updateMoshiName(${m.id},this.value)">
-        <button class="btn btn-danger" onclick="deleteMoshi(${m.id})">削除</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-sm" onclick="toggleMoshiExpand(${m.id})">閉じる</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMoshi(${m.id})">削除</button>
+        </div>
       </div>
       <div class="moshi-total-row">
         <div class="moshi-total-label">総合点</div>
@@ -687,6 +715,15 @@ td.diff-neg{color:#9b2424;font-weight:600}
 /* 模試 */
 .moshi-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .moshi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px;margin-bottom:10px}
+.moshi-card-collapsed{padding:0;cursor:pointer}
+.moshi-collapsed-row{display:flex;align-items:center;gap:10px;padding:10px 12px}
+.moshi-collapsed-name{font-size:13px;font-weight:600;flex-shrink:0;min-width:60px}
+.moshi-collapsed-stats{display:flex;gap:14px;flex:1}
+.mc-stat{display:flex;flex-direction:column;align-items:center}
+.mc-stat-label{font-size:9px;color:var(--text3)}
+.mc-stat-val{font-size:14px;font-weight:700;color:var(--accent)}
+.btn-expand{padding:5px 12px;font-size:11px;border:1px solid var(--border2);border-radius:99px;background:var(--surface2);color:var(--text2);cursor:pointer;flex-shrink:0}
+.moshi-card-expanded{}
 .moshi-name-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .moshi-name-input{font-size:14px;font-weight:600;border:none;background:transparent;color:var(--text);border-bottom:1px solid var(--border2);width:130px;font-family:inherit;outline:none}
 .moshi-subjects{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
