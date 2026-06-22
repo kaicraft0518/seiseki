@@ -420,7 +420,7 @@ function drawTotalGraph(){
   document.getElementById('teiki-graph-total').style.display='block';
   document.getElementById('teiki-graph-sub').style.display='none';
   const d=gd();
-  const labels=[],scData=[],glData=[],avData=[],rtData=[];
+  const labels=[],scData=[],glData=[],avData=[];
   EXAMS.forEach((e,i)=>{
     labels.push(e);
     let tSc=0,tGl=0,tAv=0,hasSc=false,hasGl=false,hasAv=false;
@@ -434,26 +434,20 @@ function drawTotalGraph(){
     scData.push(hasSc?Math.round(tSc*10)/10:null);
     glData.push(hasGl?Math.round(tGl*10)/10:null);
     avData.push(hasAv?Math.round(tAv*10)/10:null);
-    // 合計評定
-    const tr=d.totalRanks&&d.totalRanks[i];
-    rtData.push(tr&&tr.rating!==''&&tr.rating!=null?parseInt(tr.rating):null);
   });
   if(teikiAllChart) teikiAllChart.destroy();
 
-  // 合計点用Y軸と評定用Y軸（y1）を分ける
   teikiAllChart=new Chart(document.getElementById('teikiAllChart'),{
     type:'line',
     data:{labels,datasets:[
       {label:'自分',    data:scData,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2.5,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4',yAxisID:'y'},
       {label:'目標',    data:glData,borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#1D9E75',yAxisID:'y'},
       {label:'平均',    data:avData,borderColor:'#e67e22',backgroundColor:'transparent',borderWidth:2,borderDash:[3,3],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#e67e22',yAxisID:'y'},
-      {label:'合計評定',data:rtData,borderColor:'#8e44ad',backgroundColor:'transparent',borderWidth:2,borderDash:[2,4],tension:0.35,spanGaps:false,pointRadius:5,pointBackgroundColor:'#8e44ad',yAxisID:'y1'},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},boxWidth:14,padding:8}}},
       scales:{
-        y:{beginAtZero:false,position:'left',grid:{color:'rgba(0,0,0,0.06)'},title:{display:true,text:'点数',font:{size:10}}},
-        y1:{beginAtZero:false,position:'right',min:1,max:10,ticks:{stepSize:1},grid:{drawOnChartArea:false},title:{display:true,text:'評定',font:{size:10}}},
+        y:{beginAtZero:false,position:'left',grid:{color:'rgba(0,0,0,0.06)'}},
         x:{grid:{display:false}}
       }}
   });
@@ -464,19 +458,16 @@ function drawSubGraph(){
   document.getElementById('teiki-graph-sub').style.display='block';
   const d=gd(),sub=SUBJECTS.find(s=>s.name===currentSubject);
   if(!sub) return;
-  const labels=[],ratings=[],diffs=[];
+  const labels=[],diffs=[];
   EXAMS.forEach((e,i)=>{
     if(!hasExam(sub,i)) return;
     labels.push(e);
-    const sc=d.scores[sub.name][i],mx=d.maxScores[sub.name][i]||100,av=d.avgScores[sub.name][i];
-    const rt=d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][i]!==''?parseInt(d.ratings[sub.name][i]):null;
-    ratings.push(rt);
+    const sc=d.scores[sub.name][i],av=d.avgScores[sub.name][i];
     diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
   });
   if(teikiLineChart) teikiLineChart.destroy();
   if(teikiSubChart)  teikiSubChart.destroy();
   const gc='rgba(0,0,0,0.06)';
-  teikiLineChart=new Chart(document.getElementById('teikiLineChart'),{type:'line',data:{labels,datasets:[{data:ratings,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:1},grid:{color:gc}},x:{grid:{display:false}}}}});
   const dc=diffs.map(v=>v==null?'transparent':v>=0?'rgba(29,158,117,0.7)':'rgba(216,90,48,0.7)');
   teikiSubChart=new Chart(document.getElementById('teikiSubChart'),{type:'bar',data:{labels,datasets:[{data:diffs,backgroundColor:dc,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gc},ticks:{callback:v=>(v>=0?'+':'')+v}},x:{grid:{display:false}}}}});
 }
@@ -820,8 +811,6 @@ td.diff-neg{color:#9b2424;font-weight:600}
           <div class="chart-wrap"><canvas id="teikiAllChart"></canvas></div>
         </div>
         <div id="teiki-graph-sub" style="display:none">
-          <div class="chart-block-sm-title" style="font-size:11px;color:var(--text2);font-weight:600;margin-bottom:6px">評定の推移</div>
-          <div class="chart-wrap"><canvas id="teikiLineChart"></canvas></div>
           <div class="chart-sub-grid">
             <div class="chart-block-sm">
               <div class="chart-block-sm-title">平均点との差</div>
