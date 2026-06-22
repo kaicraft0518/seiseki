@@ -81,12 +81,13 @@ function initGradeDefaults(g){
   if(!d.scores)     d.scores     = {};
   if(!d.avgScores)  d.avgScores  = {};
   if(!d.goalScores) d.goalScores = {};
+  if(!d.ratings)    d.ratings    = {};
   if(!d.topScores)  d.topScores  = {};
   if(!d.totalRanks) d.totalRanks = {};
   if(!d.moshiData)  d.moshiData  = [];
   if(d.moshiCount == null) d.moshiCount = 0;
   SUBJECTS.forEach(s => {
-    ['maxScores','scores','avgScores','goalScores','topScores'].forEach(k => {
+    ['maxScores','scores','avgScores','goalScores','topScores','ratings'].forEach(k => {
       if(!d[k][s.name]) d[k][s.name] = {};
     });
     EXAMS.forEach((_,i) => {
@@ -95,6 +96,7 @@ function initGradeDefaults(g){
       if(d.avgScores[s.name][i]  == null) d.avgScores[s.name][i]  = '';
       if(d.goalScores[s.name][i] == null) d.goalScores[s.name][i] = '';
       if(d.topScores[s.name][i]  == null) d.topScores[s.name][i]  = '';
+      if(d.ratings[s.name][i]    == null) d.ratings[s.name][i]    = '';
     });
   });
   EXAMS.forEach((_,i) => {
@@ -237,14 +239,14 @@ function buildTable(){
   let hCols = `<th style="min-width:100px;text-align:left;position:sticky;left:0;z-index:2;background:var(--surface2)">科目</th>
     <th>満点</th><th>目標</th><th>平均点</th>`;
   if(showTopScore) hCols += `<th>最高点</th>`;
-  hCols += `<th>自分</th><th>差</th><th>目標差</th><th>得点率</th><th>評定</th><th>学年順位</th>`;
+  hCols += `<th>自分</th><th>差</th><th>目標差</th><th>得点率</th><th>評定</th>`;
   document.getElementById('thead').innerHTML = `<tr>${hCols}</tr>`;
 
   let b='';
   SUBJECTS.forEach(sub=>{
     const rid=rowId(sub.name);
     if(!hasExam(sub,ei)){
-      const span = showTopScore ? 10 : 9;
+      const span = showTopScore ? 9 : 8;
       b+=`<tr id="${rid}"><td class="sub ${sub.cat} sticky-col" style="color:var(--text3)">${sub.name}</td>
           <td class="na" colspan="${span}">この考査は実施なし</td></tr>`;
       return;
@@ -254,9 +256,9 @@ function buildTable(){
     const av  = d.avgScores[sub.name][ei];
     const gl  = d.goalScores[sub.name][ei];
     const tp  = d.topScores[sub.name][ei];
-    const rnk = d.scores[sub.name]['rank_'+ei]||'';
-    const tot = d.scores[sub.name]['rtotal_'+ei]||'';
-    const {diff,diffClass,rate,r,rc} = calcCells(sc,av,mx);
+    const rt  = d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][ei]!=null ? d.ratings[sub.name][ei] : '';
+    const {diff,diffClass,rate} = calcCells(sc,av,mx);
+    const rc  = rt!==''&&rt!=null ? 'r'+Math.min(10,Math.max(1,parseInt(rt))) : '';
     let gdiff='—',gdiffClass='';
     if(sc!==''&&sc!=null&&gl!==''&&gl!=null&&!isNaN(sc)&&!isNaN(gl)){
       const gv=Math.round((parseFloat(sc)-parseFloat(gl))*10)/10;
@@ -273,12 +275,7 @@ function buildTable(){
       <td class="cell-diff ${diffClass}" id="${rid}-diff">${diff}</td>
       <td class="${gdiffClass}" id="${rid}-gdiff">${gdiff}</td>
       <td class="cell-rate" id="${rid}-rate">${rate}</td>
-      <td class="cell-r ${rc}" id="${rid}-r">${r!=null?r:'—'}</td>
-      <td class="rank-cell">
-        <input type="number" min="1" value="${rnk}" placeholder="—" onchange="onRank('${sub.name}',${ei},'rank',this.value)">
-        <span class="rank-sep">/</span>
-        <input type="number" min="1" value="${tot}" placeholder="全体" onchange="onRank('${sub.name}',${ei},'rtotal',this.value)">
-      </td>
+      <td class="${rc}" id="${rid}-r"><input type="number" min="1" max="10" value="${rt}" placeholder="—" style="width:32px;font-weight:700" oninput="onRating('${sub.name}',${ei},this.value)"></td>
     </tr>`;
   });
   // 合計行
@@ -298,27 +295,19 @@ function buildTable(){
     <td class="${trc}" id="total-r-cell">
       <input type="number" min="1" max="10" value="${tr.rating||''}" placeholder="—" style="width:32px;font-weight:700" onchange="onTotalRating(${ei},this.value)">
     </td>
-    <td class="rank-cell">
-      <input type="number" min="1" value="${tr.rank||''}" placeholder="—" onchange="onTotalRank(${ei},'rank',this.value)">
-      <span class="rank-sep">/</span>
-      <input type="number" min="1" value="${tr.rtotal||''}" placeholder="全体" onchange="onTotalRank(${ei},'rtotal',this.value)">
-    </td>
   </tr>`;
   document.getElementById('tbody').innerHTML=b;
   updateTotals(); buildSummary();
 }
 
 function calcCells(sc,av,mx){
-  let diff='—',diffClass='',rate='—',r=null,rc='';
-  if(sc!==''&&sc!=null&&!isNaN(sc)){
-    rate=fmtN(parseFloat(sc)/mx*100)+'%';
-    r=calcRating(sc,mx); rc=r?'r'+r:'';
-  }
+  let diff='—',diffClass='',rate='—';
+  if(sc!==''&&sc!=null&&!isNaN(sc)) rate=fmtN(parseFloat(sc)/mx*100)+'%';
   if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){
     const dv=Math.round((parseFloat(sc)-parseFloat(av))*10)/10;
     diff=(dv>=0?'+':'')+fmtN(dv); diffClass=dv>=0?'diff-pos':'diff-neg';
   }
-  return {diff,diffClass,rate,r,rc};
+  return {diff,diffClass,rate};
 }
 
 function updateRow(subName){
@@ -327,7 +316,7 @@ function updateRow(subName){
   const rid=rowId(subName);
   const mx=d.maxScores[subName][ei]||100;
   const sc=d.scores[subName][ei],av=d.avgScores[subName][ei],gl=d.goalScores[subName][ei];
-  const {diff,diffClass,rate,r,rc}=calcCells(sc,av,mx);
+  const {diff,diffClass,rate}=calcCells(sc,av,mx);
   let gdiff='—',gdiffClass='';
   if(sc!==''&&sc!=null&&gl!==''&&gl!=null&&!isNaN(sc)&&!isNaN(gl)){
     const gv=Math.round((parseFloat(sc)-parseFloat(gl))*10)/10;
@@ -337,7 +326,6 @@ function updateRow(subName){
   upd(rid+'-diff',diff,'cell-diff '+diffClass);
   upd(rid+'-gdiff',gdiff,gdiffClass);
   upd(rid+'-rate',rate,null);
-  upd(rid+'-r',r!=null?r:'—','cell-r '+(r?'r'+r:''));
   updateTotals(); buildSummary();
 }
 
@@ -375,8 +363,8 @@ function buildSummary(){
   const tr=d.totalRanks[ei]||{};
   SUBJECTS.forEach(sub=>{
     if(!hasExam(sub,ei)) return;
-    const r=calcRating(d.scores[sub.name][ei],d.maxScores[sub.name][ei]);
-    if(r!=null){total+=r;cnt++;if(r>maxR)maxR=r;}
+    const r=d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][ei]!==''?parseInt(d.ratings[sub.name][ei]):null;
+    if(r!=null&&!isNaN(r)){total+=r;cnt++;if(r>maxR)maxR=r;}
     const sc=d.scores[sub.name][ei],av=d.avgScores[sub.name][ei];
     if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){diffTotal+=parseFloat(sc)-parseFloat(av);diffCnt++;}
   });
@@ -395,7 +383,14 @@ window.onAvg  =(n,i,v)=>{gd().avgScores[n][i]=v===''?'':parseFloat(v);updateRow(
 window.onScore=(n,i,v)=>{gd().scores[n][i]=v===''?'':parseFloat(v);updateRow(n);scheduleAutosave();};
 window.onGoal =(n,i,v)=>{gd().goalScores[n][i]=v===''?'':parseFloat(v);updateRow(n);scheduleAutosave();};
 window.onTop  =(n,i,v)=>{gd().topScores[n][i]=v===''?'':parseFloat(v);updateTotals();scheduleAutosave();};
-window.onRank =(n,i,k,v)=>{gd().scores[n][k+'_'+i]=v===''?'':parseInt(v);scheduleAutosave();};
+window.onRating=(n,i,v)=>{
+  const d=gd(); if(!d.ratings[n]) d.ratings[n]={};
+  d.ratings[n][i]=v===''?'':parseInt(v);
+  // セルの色を更新
+  const el=document.getElementById(rowId(n)+'-r');
+  if(el){ const rv=d.ratings[n][i]; el.className=rv?'r'+Math.min(10,Math.max(1,rv)):''; }
+  buildSummary(); scheduleAutosave();
+};
 window.onTotalRating=(i,v)=>{
   const d=gd();if(!d.totalRanks[i])d.totalRanks[i]={};
   d.totalRanks[i].rating=v===''?'':parseInt(v);
@@ -425,7 +420,7 @@ function drawTotalGraph(){
   document.getElementById('teiki-graph-total').style.display='block';
   document.getElementById('teiki-graph-sub').style.display='none';
   const d=gd();
-  const labels=[],scData=[],glData=[],avData=[];
+  const labels=[],scData=[],glData=[],avData=[],rtData=[];
   EXAMS.forEach((e,i)=>{
     labels.push(e);
     let tSc=0,tGl=0,tAv=0,hasSc=false,hasGl=false,hasAv=false;
@@ -439,18 +434,28 @@ function drawTotalGraph(){
     scData.push(hasSc?Math.round(tSc*10)/10:null);
     glData.push(hasGl?Math.round(tGl*10)/10:null);
     avData.push(hasAv?Math.round(tAv*10)/10:null);
+    // 合計評定
+    const tr=d.totalRanks&&d.totalRanks[i];
+    rtData.push(tr&&tr.rating!==''&&tr.rating!=null?parseInt(tr.rating):null);
   });
   if(teikiAllChart) teikiAllChart.destroy();
+
+  // 合計点用Y軸と評定用Y軸（y1）を分ける
   teikiAllChart=new Chart(document.getElementById('teikiAllChart'),{
     type:'line',
     data:{labels,datasets:[
-      {label:'自分',  data:scData,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2.5,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'},
-      {label:'目標',  data:glData,borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#1D9E75'},
-      {label:'平均',  data:avData,borderColor:'#e67e22',backgroundColor:'transparent',borderWidth:2,borderDash:[3,3],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#e67e22'},
+      {label:'自分',    data:scData,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2.5,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4',yAxisID:'y'},
+      {label:'目標',    data:glData,borderColor:'#1D9E75',backgroundColor:'transparent',borderWidth:2,borderDash:[6,4],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#1D9E75',yAxisID:'y'},
+      {label:'平均',    data:avData,borderColor:'#e67e22',backgroundColor:'transparent',borderWidth:2,borderDash:[3,3],tension:0.35,spanGaps:false,pointRadius:4,pointBackgroundColor:'#e67e22',yAxisID:'y'},
+      {label:'合計評定',data:rtData,borderColor:'#8e44ad',backgroundColor:'transparent',borderWidth:2,borderDash:[2,4],tension:0.35,spanGaps:false,pointRadius:5,pointBackgroundColor:'#8e44ad',yAxisID:'y1'},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:true,position:'bottom',labels:{font:{size:11},boxWidth:14,padding:8}}},
-      scales:{y:{beginAtZero:false,grid:{color:'rgba(0,0,0,0.06)'}},x:{grid:{display:false}}}}
+      scales:{
+        y:{beginAtZero:false,position:'left',grid:{color:'rgba(0,0,0,0.06)'},title:{display:true,text:'点数',font:{size:10}}},
+        y1:{beginAtZero:false,position:'right',min:1,max:10,ticks:{stepSize:1},grid:{drawOnChartArea:false},title:{display:true,text:'評定',font:{size:10}}},
+        x:{grid:{display:false}}
+      }}
   });
 }
 
@@ -464,14 +469,15 @@ function drawSubGraph(){
     if(!hasExam(sub,i)) return;
     labels.push(e);
     const sc=d.scores[sub.name][i],mx=d.maxScores[sub.name][i]||100,av=d.avgScores[sub.name][i];
-    ratings.push(calcRating(sc,mx));
+    const rt=d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][i]!==''?parseInt(d.ratings[sub.name][i]):null;
+    ratings.push(rt);
     diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
   });
   if(teikiLineChart) teikiLineChart.destroy();
   if(teikiSubChart)  teikiSubChart.destroy();
   const gc='rgba(0,0,0,0.06)';
   teikiLineChart=new Chart(document.getElementById('teikiLineChart'),{type:'line',data:{labels,datasets:[{data:ratings,borderColor:'#4a3fd4',backgroundColor:'rgba(74,63,212,0.07)',borderWidth:2,tension:0.35,fill:true,spanGaps:false,pointRadius:5,pointBackgroundColor:'#4a3fd4'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,max:10,ticks:{stepSize:1},grid:{color:gc}},x:{grid:{display:false}}}}});
-  const dc=diffs.map(d=>d==null?'transparent':d>=0?'rgba(29,158,117,0.7)':'rgba(216,90,48,0.7)');
+  const dc=diffs.map(v=>v==null?'transparent':v>=0?'rgba(29,158,117,0.7)':'rgba(216,90,48,0.7)');
   teikiSubChart=new Chart(document.getElementById('teikiSubChart'),{type:'bar',data:{labels,datasets:[{data:diffs,backgroundColor:dc,borderRadius:5}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:gc},ticks:{callback:v=>(v>=0?'+':'')+v}},x:{grid:{display:false}}}}});
 }
 
