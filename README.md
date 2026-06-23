@@ -3,7 +3,7 @@
 定期考査・模試の成績を記録し、推移をグラフで可視化できるWebアプリです。
 Googleアカウントでログインすると、Firebase Realtime Database を通じてデータがクラウドに自動保存されます。
 
-🔗 **公開URL**: https://kaicraft0518.github.io/seiseki/
+🔗 **公開URL**: https://seiseki.f5.si
 
 ---
 
