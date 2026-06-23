@@ -24,7 +24,7 @@ import { getDatabase, ref, set, get, onValue, off }
 
 const firebaseConfig = {
   apiKey:            "AIzaSyCCx7m_eZKDDAKq0hcuItfj7yjUv3X12mU",
-  authDomain:        "test-seiseki.firebaseapp.com",
+  authDomain:        "apps.seiseki.f5.si",
   databaseURL:       "https://test-seiseki-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId:         "test-seiseki",
   storageBucket:     "test-seiseki.firebasestorage.app",
@@ -47,15 +47,14 @@ const EXAMS   = ['第1回','第2回','第3回','第4回'];
 const SUBJECTS = [
   {name:'現代国語',      all:true,  cat:'kokugo'},
   {name:'言語文化',      all:true,  cat:'kokugo'},
-  {name:'数学I',         all:true,  cat:'sugaku'},
-  {name:'数学A',         all:true,  cat:'sugaku'},
-  {name:'英コミュⅠ',    all:true,  cat:'eigo'},
-  {name:'論表Ⅰ',        all:true,  cat:'eigo'},
-  {name:'英語L',         all:true,  cat:'eigo'},
-  {name:'科学と人間生活',all:true,  cat:'rika'},
-  {name:'化学基礎',      all:true,  cat:'rika'},
   {name:'地理総合',      all:true,  cat:'shakai'},
   {name:'歴史総合',      all:true,  cat:'shakai'},
+  {name:'数学I',         all:true,  cat:'sugaku'},
+  {name:'数学A',         all:true,  cat:'sugaku'},
+  {name:'科学と人間生活',all:true,  cat:'rika'},
+  {name:'化学基礎',      all:true,  cat:'rika'},
+  {name:'英コミュⅠ',    all:true,  cat:'eigo'},
+  {name:'論表Ⅰ',        all:true,  cat:'eigo', label:'論表・L'},
   {name:'保健',          all:false, exams:[1,3], cat:'other'},
   {name:'情報',          all:false, exams:[1,3], cat:'other'},
 ];
@@ -87,16 +86,17 @@ function initGradeDefaults(g){
   if(!d.moshiData)  d.moshiData  = [];
   if(d.moshiCount == null) d.moshiCount = 0;
   SUBJECTS.forEach(s => {
-    ['maxScores','scores','avgScores','goalScores','topScores','ratings'].forEach(k => {
-      if(!d[k][s.name]) d[k][s.name] = {};
+    const k = sKey(s);
+    ['maxScores','scores','avgScores','goalScores','topScores','ratings'].forEach(f => {
+      if(!d[f][k]) d[f][k] = {};
     });
     EXAMS.forEach((_,i) => {
-      if(d.maxScores[s.name][i]  == null) d.maxScores[s.name][i]  = 100;
-      if(d.scores[s.name][i]     == null) d.scores[s.name][i]     = '';
-      if(d.avgScores[s.name][i]  == null) d.avgScores[s.name][i]  = '';
-      if(d.goalScores[s.name][i] == null) d.goalScores[s.name][i] = '';
-      if(d.topScores[s.name][i]  == null) d.topScores[s.name][i]  = '';
-      if(d.ratings[s.name][i]    == null) d.ratings[s.name][i]    = '';
+      if(d.maxScores[k][i]  == null) d.maxScores[k][i]  = 100;
+      if(d.scores[k][i]     == null) d.scores[k][i]     = '';
+      if(d.avgScores[k][i]  == null) d.avgScores[k][i]  = '';
+      if(d.goalScores[k][i] == null) d.goalScores[k][i] = '';
+      if(d.topScores[k][i]  == null) d.topScores[k][i]  = '';
+      if(d.ratings[k][i]    == null) d.ratings[k][i]    = '';
     });
   });
   EXAMS.forEach((_,i) => {
@@ -193,7 +193,7 @@ function scheduleAutosave(){ clearTimeout(autoTimer); setSaveStatus('未保存..
 // ===== ユーティリティ =====
 function fmtN(v){ return (Math.round(v*10)/10).toFixed(1); }
 function hasExam(sub,i){ return sub.all||(sub.exams&&sub.exams.includes(i)); }
-function rowId(n){ return 'row-'+n.replace(/[^a-zA-Z0-9]/g,'_'); }
+function sKey(sub){ return sub.name; }
 function calcRating(score,max){
   if(score===''||score==null||isNaN(score)||!max) return null;
   return Math.min(10,Math.max(1,Math.round(parseFloat(score)/max*9+1)));
@@ -251,12 +251,13 @@ function buildTable(){
           <td class="na" colspan="${span}">この考査は実施なし</td></tr>`;
       return;
     }
-    const mx  = d.maxScores[sub.name][ei]||100;
-    const sc  = d.scores[sub.name][ei];
-    const av  = d.avgScores[sub.name][ei];
-    const gl  = d.goalScores[sub.name][ei];
-    const tp  = d.topScores[sub.name][ei];
-    const rt  = d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][ei]!=null ? d.ratings[sub.name][ei] : '';
+    const k   = sKey(sub);
+    const mx  = d.maxScores[k][ei]||100;
+    const sc  = d.scores[k][ei];
+    const av  = d.avgScores[k][ei];
+    const gl  = d.goalScores[k][ei];
+    const tp  = d.topScores[k][ei];
+    const rt  = d.ratings&&d.ratings[k]&&d.ratings[k][ei]!=null ? d.ratings[k][ei] : '';
     const {diff,diffClass,rate} = calcCells(sc,av,mx);
     const rc  = rt!==''&&rt!=null ? 'r'+Math.min(10,Math.max(1,parseInt(rt))) : '';
     let gdiff='—',gdiffClass='';
@@ -264,18 +265,18 @@ function buildTable(){
       const gv=Math.round((parseFloat(sc)-parseFloat(gl))*10)/10;
       gdiff=(gv>=0?'+':'')+fmtN(gv); gdiffClass=gv>=0?'diff-pos':'diff-neg';
     }
-    let topCell = showTopScore ? `<td class="top-cell"><input type="number" min="0" max="${mx}" value="${tp!==''?tp:''}" placeholder="—" oninput="onTop('${sub.name}',${ei},this.value)"></td>` : '';
-    b+=`<tr id="${rid}">
-      <td class="sub ${sub.cat} sticky-col">${sub.name}</td>
-      <td><input type="number" min="1" max="999" value="${mx}" onchange="onMax('${sub.name}',${ei},this.value)"></td>
-      <td class="goal-cell"><input type="number" min="0" value="${gl!==''?gl:''}" placeholder="—" oninput="onGoal('${sub.name}',${ei},this.value)"></td>
-      <td><input type="number" min="0" value="${av!==''?av:''}" placeholder="—" oninput="onAvg('${sub.name}',${ei},this.value)"></td>
+    let topCell = showTopScore ? `<td class="top-cell"><input type="number" min="0" max="${mx}" value="${tp!==''?tp:''}" placeholder="—" oninput="onTop('${k}',${ei},this.value)"></td>` : '';
+    b+=`<tr id="${rowId(k)}">
+      <td class="sub ${sub.cat} sticky-col">${sub.label||sub.name}</td>
+      <td><input type="number" min="1" max="999" value="${mx}" onchange="onMax('${k}',${ei},this.value)"></td>
+      <td class="goal-cell"><input type="number" min="0" value="${gl!==''?gl:''}" placeholder="—" oninput="onGoal('${k}',${ei},this.value)"></td>
+      <td><input type="number" min="0" value="${av!==''?av:''}" placeholder="—" oninput="onAvg('${k}',${ei},this.value)"></td>
       ${topCell}
-      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc!==''?sc:''}" placeholder="—" oninput="onScore('${sub.name}',${ei},this.value)"></td>
-      <td class="cell-diff ${diffClass}" id="${rid}-diff">${diff}</td>
-      <td class="${gdiffClass}" id="${rid}-gdiff">${gdiff}</td>
-      <td class="cell-rate" id="${rid}-rate">${rate}</td>
-      <td class="${rc}" id="${rid}-r"><input type="number" min="1" max="10" value="${rt}" placeholder="—" style="width:32px;font-weight:700" oninput="onRating('${sub.name}',${ei},this.value)"></td>
+      <td class="score-cell"><input type="number" min="0" max="${mx}" value="${sc!==''?sc:''}" placeholder="—" oninput="onScore('${k}',${ei},this.value)"></td>
+      <td class="cell-diff ${diffClass}" id="${rowId(k)}-diff">${diff}</td>
+      <td class="${gdiffClass}" id="${rowId(k)}-gdiff">${gdiff}</td>
+      <td class="cell-rate" id="${rowId(k)}-rate">${rate}</td>
+      <td class="${rc}" id="${rowId(k)}-r"><input type="number" min="1" max="10" value="${rt}" placeholder="—" style="width:32px;font-weight:700" oninput="onRating('${k}',${ei},this.value)"></td>
     </tr>`;
   });
   // 合計行
@@ -311,11 +312,11 @@ function calcCells(sc,av,mx){
 }
 
 function updateRow(subName){
-  const d=gd(),ei=currentExam,sub=SUBJECTS.find(s=>s.name===subName);
+  const d=gd(),ei=currentExam,sub=SUBJECTS.find(s=>sKey(s)===subName||s.name===subName);
   if(!sub||!hasExam(sub,ei)) return;
-  const rid=rowId(subName);
-  const mx=d.maxScores[subName][ei]||100;
-  const sc=d.scores[subName][ei],av=d.avgScores[subName][ei],gl=d.goalScores[subName][ei];
+  const k=sKey(sub), rid=rowId(k);
+  const mx=d.maxScores[k][ei]||100;
+  const sc=d.scores[k][ei],av=d.avgScores[k][ei],gl=d.goalScores[k][ei];
   const {diff,diffClass,rate}=calcCells(sc,av,mx);
   let gdiff='—',gdiffClass='';
   if(sc!==''&&sc!=null&&gl!==''&&gl!=null&&!isNaN(sc)&&!isNaN(gl)){
@@ -334,9 +335,9 @@ function updateTotals(){
   let tMax=0,tSc=0,tAv=0,tGl=0,tTp=0,hasSc=false,hasAv=false,hasGl=false,hasTp=false;
   SUBJECTS.forEach(sub=>{
     if(!hasExam(sub,ei)) return;
-    const mx=d.maxScores[sub.name][ei]||100;
-    const sc=d.scores[sub.name][ei],av=d.avgScores[sub.name][ei];
-    const gl=d.goalScores[sub.name][ei],tp=d.topScores[sub.name][ei];
+    const k=sKey(sub), mx=d.maxScores[k][ei]||100;
+    const sc=d.scores[k][ei],av=d.avgScores[k][ei];
+    const gl=d.goalScores[k][ei],tp=d.topScores[k][ei];
     tMax+=mx;
     if(sc!==''&&sc!=null&&!isNaN(sc)){tSc+=parseFloat(sc);hasSc=true;}
     if(av!==''&&av!=null&&!isNaN(av)){tAv+=parseFloat(av);hasAv=true;}
@@ -363,9 +364,10 @@ function buildSummary(){
   const tr=d.totalRanks[ei]||{};
   SUBJECTS.forEach(sub=>{
     if(!hasExam(sub,ei)) return;
-    const r=d.ratings&&d.ratings[sub.name]&&d.ratings[sub.name][ei]!==''?parseInt(d.ratings[sub.name][ei]):null;
+    const k=sKey(sub);
+    const r=d.ratings&&d.ratings[k]&&d.ratings[k][ei]!==''?parseInt(d.ratings[k][ei]):null;
     if(r!=null&&!isNaN(r)){total+=r;cnt++;if(r>maxR)maxR=r;}
-    const sc=d.scores[sub.name][ei],av=d.avgScores[sub.name][ei];
+    const sc=d.scores[k][ei],av=d.avgScores[k][ei];
     if(sc!==''&&sc!=null&&av!==''&&av!=null&&!isNaN(sc)&&!isNaN(av)){diffTotal+=parseFloat(sc)-parseFloat(av);diffCnt++;}
   });
   const avg=cnt?(total/cnt).toFixed(1):'—';
@@ -426,7 +428,8 @@ function drawTotalGraph(){
     let tSc=0,tGl=0,tAv=0,hasSc=false,hasGl=false,hasAv=false;
     SUBJECTS.forEach(sub=>{
       if(!hasExam(sub,i)) return;
-      const sc=d.scores[sub.name][i],gl=d.goalScores[sub.name][i],av=d.avgScores[sub.name][i];
+      const k=sKey(sub);
+      const sc=d.scores[k][i],gl=d.goalScores[k][i],av=d.avgScores[k][i];
       if(sc!==''&&sc!=null&&!isNaN(sc)){tSc+=parseFloat(sc);hasSc=true;}
       if(gl!==''&&gl!=null&&!isNaN(gl)){tGl+=parseFloat(gl);hasGl=true;}
       if(av!==''&&av!=null&&!isNaN(av)){tAv+=parseFloat(av);hasAv=true;}
@@ -458,11 +461,12 @@ function drawSubGraph(){
   document.getElementById('teiki-graph-sub').style.display='block';
   const d=gd(),sub=SUBJECTS.find(s=>s.name===currentSubject);
   if(!sub) return;
+  const k=sKey(sub);
   const labels=[],diffs=[];
   EXAMS.forEach((e,i)=>{
     if(!hasExam(sub,i)) return;
     labels.push(e);
-    const sc=d.scores[sub.name][i],av=d.avgScores[sub.name][i];
+    const sc=d.scores[k][i],av=d.avgScores[k][i];
     diffs.push(sc!==''&&sc!=null&&av!==''&&av!=null?Math.round((parseFloat(sc)-parseFloat(av))*10)/10:null);
   });
   if(teikiLineChart) teikiLineChart.destroy();
