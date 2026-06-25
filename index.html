@@ -129,6 +129,7 @@ onAuthStateChanged(auth, user => {
 });
 
 async function startSync(uid){
+  console.log('startSync開始', uid);
   const RESTORE_UID = 'R8TSKHZPaaXCI4UCFfnfyDad0HT2';
   const RESTORE_DATA = {
     avgScores: {"化学基礎":[55,"","",""],"地理総合":[57,"","",""],"情報":["","","",""],"数学A":[53.6,"","",""],"数学I":[58,"","",""],"歴史総合":[55,"","",""],"現代国語":[68,"","",""],"科学と人間生活":[31.2,"","",""],"英コミュⅠ":[55.6,"","",""],"英語L":[16.2,"","",""],"言語文化":[68,"","",""],"論表Ⅰ":[60.9,"","",""]},
@@ -139,6 +140,7 @@ async function startSync(uid){
   };
 
   const snap = await get(ref(db, `users/${uid}/seiseki`));
+  console.log('snap取得', snap.exists(), snap.val());
   const raw  = snap.exists() ? snap.val() : null;
 
   const needsRestore = uid === RESTORE_UID &&
@@ -171,9 +173,11 @@ async function startSync(uid){
 
   GRADES.forEach((_,g) => initGradeDefaults(g));
   buildUI(); setSaveStatus('同期済み');
+  console.log('buildUI完了');
 
   dbRef = ref(db, `users/${uid}/seiseki`);
   onValue(dbRef, snap => {
+    console.log('onValue発火', snap.val());
     const data = snap.val();
     if(data && data.grades) GRADES.forEach((_,g) => { if(data.grades[g]) gradeData[g]=data.grades[g]; });
     GRADES.forEach((_,g) => initGradeDefaults(g));
